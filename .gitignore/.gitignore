@@ -1,0 +1,12 @@
+.DS_Store
+*.pkl
+__pycache__/
+data/
+figures/
+results/
+.cache/
+*.pyc
+*.gz
+paper/
+literature/
+extra_code/
