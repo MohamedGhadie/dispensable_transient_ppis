@@ -1,0 +1,347 @@
+#----------------------------------------------------------------------------------------
+# Modules for statistical computations.
+#----------------------------------------------------------------------------------------
+
+import numpy as np
+import scipy.stats as stats
+from itertools import compress
+from collections import Counter
+
+def pearson_corr (sample1, sample2):
+    """Calculate Pearson's correlation coefficient between two data samples.
+
+    Args:
+        sample1 (array): first sample.
+        sample2 (array): second sample.
+    
+    """
+    r, p = stats.pearsonr(sample1, sample2)
+    print('pearson correlation coefficient: %g' % r)
+    print('p-value of correlation: %g' % p)
+    return r, p
+
+def fisher_test (row1, row2):
+    """Calculate statistical significance for a contingency table using Fisher's exact
+        test.
+
+    Args:
+        row1 (array): first row of contingency table.
+        row2 (array): second row of contingency table.
+    
+    """
+    oddsratio, pvalue = stats.fisher_exact([row1, row2])
+    print("Fisher's exact test, p-value = %g (odds ratio = %g)" % (pvalue, oddsratio))
+
+def t_test (sample1, sample2):
+    """Calculate statistical significance for difference in mean between two data samples
+        of unequal variances using two-sided t-test.
+
+    Args:
+        sample1 (array): first sample.
+        sample2 (array): second sample.
+    
+    """
+    _, pvalue = stats.ttest_ind(sample1, sample2, equal_var = False)
+    print("t test, p-value = %g" % pvalue)
+
+def perm_test (sample1, sample2, iter):
+    """Calculate statistical significance for difference in mean between two data samples
+        using permutation test.
+
+    Args:
+        sample1 (array): first sample.
+        sample2 (array): second sample.
+        iter (int): number of resamplings.
+    
+    """
+    n, k = len(sample1), 0
+    diff = np.abs(np.mean(sample1) - np.mean(sample2))
+    s = np.concatenate([sample1, sample2])
+    for j in range(iter):
+        np.random.shuffle(s)
+        if diff <= np.abs(np.mean(s[:n]) - np.mean(s[n:])):
+            k += 1
+    print("permutation test, p-value = %g (%d iterations)" % (k / iter, iter))
+
+def bootstrap_test (sample1, sample2, iter = 10000):
+    """Calculate statistical significance for difference in mean between two data samples
+        by bootstrapping the data samples.
+
+    Args:
+        sample1 (array): first sample.
+        sample2 (array): second sample.
+        iter (int): number of resamplings.
+    
+    """
+    n1, n2, k = len(sample1), len(sample2), 0
+    if n1 and n2:
+        diff = np.abs(np.mean(sample1) - np.mean(sample2))
+        sample1 = sample1 - np.mean(sample1)
+        sample2 = sample2 - np.mean(sample2)
+        for j in range(iter):
+            randSample1 = np.random.choice(sample1, size=n1, replace=True)
+            randSample2 = np.random.choice(sample2, size=n2, replace=True)
+            if diff <= np.abs(np.mean(randSample1) - np.mean(randSample2)):
+                k += 1
+        print("bootstrap test, p-value = %g (%d iterations)" % (k / iter, iter))
+    else:
+        print("bootstrap test, p-value = NaN (empty sample)")
+
+def normality_test (sample, alpha):
+    """Check if a data sample has a normal distribution.
+
+    Args:
+        sample (array): data sample.
+        alpha (float): p-value cutoff for reporting statistical significance.
+    
+    """
+    if len(sample) > 7:
+        _, pvalue = stats.mstats.normaltest(sample)
+        print("Normality test, p-value = %g" % pvalue)
+        if pvalue > alpha:
+            print("Distribution is normal")
+        else:
+            print("Diftribution is not normal")
+    else:
+        print("Normality test not possible: sample size smaller than 8")
+
+def equal_variance_test (sample1, sample2, alpha):
+    """Check if two data samples have no statistically significant difference in their
+        variances.
+
+    Args:
+        sample1 (array): first sample.
+        sample2 (array): second sample.
+        alpha (float): p-value cutoff for reporting statistical significance.
+    
+    """
+    _, pvalue = stats.levene(sample1, sample2)
+    print("Equal variance test, p-value = %g" %pvalue)
+    if pvalue < alpha:
+        print("Distribution variances are equal")
+    else:
+        print("Diftribution variances not equal")
+
+def sderror (s):
+    """Calculate standard error of the mean.
+
+    Args:
+        s (array): data sample.
+    
+    Returns:
+        float
+
+    """
+    l = len(s)
+    if l:
+        return np.std(s) / np.sqrt(l)
+    else:
+        return np.nan
+
+def sderror_on_fraction (k, n):
+    """Calculate standard error on a fraction.
+
+    Args:
+        k (int): numerator.
+        n (int): denominator (sample size).
+    
+    Returns:
+        float
+
+    """
+    p = k / n
+    return np.sqrt(p * (1 - p) / n)
+
+def proportion_CI (k, n, conf = 95.0):
+    """Calculate the confidence interval on a proportion k/n.
+
+    Args:
+        k (int): numerator.
+        n (int): denominator (sample size).
+        conf (numeric): % confidence interval.
+    
+    Returns:
+        float, float
+
+    """
+    mult = { 90.0 : 1.645,
+             95.0 : 1.960,
+             97.5 : 2.240,
+             99.0 : 2.576,
+             99.9 : 3.291 }
+    if k > 0 and n > 0 and conf in mult:
+        se = sderror_on_fraction (k, n)
+        p = k / n
+        logSE = np.sqrt((1 / k) - (1 / n))
+        lowerlog = np.log(p) - mult[conf] * logSE
+        upperlog = np.log(p) + mult[conf] * logSE
+        return np.exp(lowerlog), np.exp(upperlog)
+    else:
+        return np.nan, np.nan
+
+def proportion_ratio_CI (k1, n1, k2, n2, a=1, b=0, c=1, d=0, conf = 95.0):
+    """Calculate the confidence interval on a ratio of two linear functions of proportions 
+        (a * (k1/n1) + b) / (c * (k2/n2) + d).
+
+    Args:
+        k1, k2, n1, n2 (int): proportion numerators and denominators.
+        a, b, c, d (float): prportion linear function parameters.
+        conf (numeric): % confidence interval.
+    
+    Returns:
+        float, float
+
+    """
+    mult = { 90.0 : 1.645,
+             95.0 : 1.960,
+             97.5 : 2.240,
+             99.0 : 2.576,
+             99.9 : 3.291 }
+    if n1 > 0 and n2 > 0 and conf in mult:
+        p1 = a * k1/n1 + b
+        p2 = c * k2/n2 + d
+        if p2 > 0:
+            r = p1 / p2
+        else:
+            r = 1 if p1 == 0 else np.inf
+        var1 = (1/k1 - 1/n1) / (1 + (b * n1) / (a * k1)) if k1 > 0 else 1
+        var2 = (1/k2 - 1/n2) / (1 + (d * n2) / (c * k2)) if k2 > 0 else 1    
+        SElogR = np.sqrt(var1 + var2)
+        lowerlog = np.log(r) - mult[conf] * SElogR
+        upperlog = np.log(r) + mult[conf] * SElogR
+        return np.exp(lowerlog), np.exp(upperlog)
+    else:
+        return np.nan, np.nan
+
+def proportion_sum_CI (k1, n1, k2, n2, a=1, b=1, conf = 95.0):
+    """Calculate the confidence interval on a sum of two proportions 
+        a(k1/n1) + b(k2/n2).
+
+    Args:
+        k1, k2, n1, n2 (int): proportion numerators and denominators.
+        a, b (float): prportion coefficients.
+        conf (numeric): % confidence interval.
+    
+    Returns:
+        float, float
+
+    """
+    mult = { 90.0 : 1.645,
+             95.0 : 1.960,
+             97.5 : 2.240,
+             99.0 : 2.576,
+             99.9 : 3.291 }
+    if n1 > 0 and n2 > 0 and conf in mult:
+        p1 = k1 / n1
+        p2 = k2 / n2
+        s = a*p1 + b*p2
+        term1 = a**2 * p1 * (1 - p1) / n1
+        term2 = b**2 * p2 * (1 - p2) / n2
+        term3 = a*p1 + b*p2
+        if (term1 == 0) and (term2 == 0) and (term3 == 0):
+            SElog = 1
+        else:
+            SElog = np.sqrt(term1 + term2) / term3
+        lowerlog = np.log(s) - mult[conf] * SElog
+        upperlog = np.log(s) + mult[conf] * SElog
+        return np.exp(lowerlog), np.exp(upperlog)
+    else:
+        return np.nan, np.nan
+
+def compress_data (xpos, ypos, xstart = 0, binwidth = 0.1, perbin = 0):
+    """Compress y-axis data based on x-axis binning.
+
+    Args:
+        xpos (array): x-axis data points.
+        ypos (array): y-axis data points.
+        xstart (numeric): starting point of first bin on x-axis.
+        binwidth (numeric): bin width on x-axis.
+        perbin (int): maximum number of data points compressed per bin.
+
+    Returns:
+        float, float, float, float, list: x-data means, y-data means, x-data SEM, y-data SEM, bin borders.
+
+    """
+    xposmax = max(xpos)
+    xmin, xmax = xstart, xstart + binwidth
+    xmean, ymean, xerr, yerr, bins = [], [], [], [], []
+    while xmin < xposmax:
+        if xmin == xstart:
+            select = [ xmin <= x <= xmax for x in xpos ]
+        else:
+            select = [ xmin < x <= xmax for x in xpos ]
+        numpts = sum(select)
+        if (numpts == 0) and (perbin == 0):
+            xmin = xmax
+            xmax = xmin + binwidth
+        elif (numpts >= perbin) or (xmax >= xposmax):
+            xcompress = list( compress(xpos, select) )
+            ycompress = list( compress(ypos, select) )
+            bins.append( (xmin, xmax) )
+            xmean.append( np.mean( xcompress ) )
+            ymean.append( np.mean( ycompress ) )
+            xerr.append( sderror( xcompress ) )
+            yerr.append( sderror( ycompress ) )
+            xmin = xmax
+            xmax = xmin + binwidth
+        else:
+            xmax = xmax + binwidth
+    return xmean, ymean, xerr, yerr, bins
+
+def round_data (data, w = 1, maxVal = np.inf):
+    """Round data points.
+
+    Args:
+        data (array): data points to be rounded.
+        w (numeric): rounding interval.
+        maxVal (numeric): maximum rounded value.
+
+    Returns:
+        list: rounded data.
+
+    """
+    rounded = []
+    for d in data:
+        if d <= maxVal - w/2:
+            rounded.append(w * round(float(d) / w))
+        else:
+            rounded.append(maxVal)
+    return rounded
+
+def pdf (data):
+    """Produce a discrete density distribution for a sample of data.
+
+    Args:
+        data (array): data points.
+
+    Returns:
+        array, array: density distribution, unique data points.
+
+    """
+    dataCount = Counter(data)
+    x = np.array(sorted(dataCounter.keys()))
+    dens = np.array( [dataCount[d] for d in x] )    
+    return dens/sum(dens), x
+
+def cont_pdf (data, minVal = None, maxVal = None, w = 1):
+    """Produce a continuous density distribution for a sample of data.
+
+    Args:
+        data (array): data points.
+        minVal (numeric): starting point of density distribution.
+        maxVal (numeric): ending point of density distribution.
+        w (numeric): interval between data point.
+
+    Returns:
+        array, array: density distribution, unique data points.
+
+    """
+    dataCount = Counter(data)
+    k = dataCount.keys()
+    if minVal is None:
+        minVal = min(k)
+    if maxVal is None:
+        maxVal = max(k)
+    x = np.arange(minVal, maxVal + w, w)
+    dens = np.array( [dataCount[d] for d in x] )    
+    return dens/sum(dens), x
