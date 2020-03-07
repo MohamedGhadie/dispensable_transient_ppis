@@ -1,11 +1,5 @@
 #----------------------------------------------------------------------------------------
-# Calculate the fraction of dispensable protein-protein interactions (PPIs) in the structural
-# interactome, i.e., the fraction of PPIs that are effectively neutral upon perturbation.
-# The fraction of dispensable PPIs is calculated from geometry-based predictions of PPI 
-# perturbations.
 #
-# Run the following script before running this script:
-# - predict_perturbations_geometry.py
 #----------------------------------------------------------------------------------------
 
 import os

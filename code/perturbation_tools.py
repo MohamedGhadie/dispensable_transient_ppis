@@ -1,0 +1,118 @@
+import numpy as np
+from protein_function import is_transient, is_permanent
+
+def unique_perturbation_mutations (mutations):
+    
+    perturbs = {p:{} for p in set(mutations["protein"].values)}
+    for _, mut in mutations.iterrows():
+        mutPerturbs = set([p for p, pert in zip(mut.partners, mut.perturbations) if pert > 0])
+        perturbs[mut.protein][(mut.mut_position, mut.mut_res)] = mutPerturbs
+
+    uniques = []
+    for _, mut in mutations.iterrows():
+        keep = True
+        otherPerturbs = set()
+        for k, val in perturbs[mut.protein].items():
+            if k != (mut.mut_position, mut.mut_res):
+                otherPerturbs.update(val)
+        mutPerturbs = perturbs[mut.protein][(mut.mut_position, mut.mut_res)]
+        if mutPerturbs:
+            if len(mutPerturbs - otherPerturbs) == 0:
+                keep = False
+                del perturbs[mut.protein][(mut.mut_position, mut.mut_res)]
+        uniques.append(keep)
+    return uniques
+
+def perturbed_partner_max_degree (protein, partners, perturbs, degree):
+    
+    d = perturbed_partner_degrees (protein, partners, perturbs, degree)
+    if d:
+        return max(d.values())
+    else:
+        return np.nan
+
+def perturbed_partner_degrees (protein, partners, perturbs, degree):
+    
+    if num_perturbed_ppis (perturbs) > 0:
+        proteins = {protein} | {p for p, pert in zip(partners, perturbs) if pert > 0}
+        return {p:degree[p] for p in proteins if p in degree}
+    else:
+        return None
+
+def num_transient_perturbed_ppis (protein,
+                                  partners,
+                                  perturbs,
+                                  expr,
+                                  minTissues = 3,
+                                  maxCoexpr = 0.05):
+    
+    num = 0
+    for p, pert in zip(partners, perturbs):
+        if pert > 0:
+            if is_transient (protein, p, expr, minTissues = minTissues, maxCoexpr = maxCoexpr):
+                num += 1
+    return num
+
+def num_permanent_perturbed_ppis (protein,
+                                  partners,
+                                  perturbs,
+                                  expr,
+                                  minTissues = 3,
+                                  minCoexpr = 0.05):
+    
+    num = 0
+    for p, pert in zip(partners, perturbs):
+        if pert > 0:
+            if is_permanent (protein, p, expr, minTissues = minTissues, minCoexpr = minCoexpr):
+                num += 1
+    return num
+
+def num_perturbed_ppis (perturbations):
+    
+    return sum([p > 0 for p in perturbations if not np.isnan(p)])
+
+def perturbed_ppis_max_num_mutExcl (protein, partners, perturbations, simultaneous):
+    
+    num_mutExcl = perturbed_ppis_num_mutExcl (protein, partners, perturbations, simultaneous)
+    if num_mutExcl:
+        return max([n for p, n in num_mutExcl])
+    else:
+        return np.nan
+
+def perturbed_ppis_num_mutExcl (protein, partners, perturbations, simultaneous):
+    
+    num = num_mutExcl (protein, partners, simultaneous)
+    return [(p, n) for n, p, pert in zip(num, partners, perturbations) if pert > 0]
+
+def num_mutExcl (protein, partners, simultaneous):
+    
+    num_mutexcl = []
+    for p in partners:
+        if p in simultaneous[protein]:
+            num_mutexcl.append(len(simultaneous[protein][p]))
+        else:
+            num_mutexcl.append(np.nan)
+    return num_mutexcl
+
+def perturbed_ppis_max_num_simult (protein, partners, perturbations, simultaneous):
+    
+    num_simult = perturbed_ppis_num_simult (protein, partners, perturbations, simultaneous)
+    if num_simult:
+        return max([n for p, n in num_simult])
+    else:
+        return np.nan
+
+def perturbed_ppis_num_simult (protein, partners, perturbations, simultaneous):
+    
+    num = num_simult (protein, partners, simultaneous)
+    return [(p, n) for n, p, pert in zip(num, partners, perturbations) if pert > 0]
+
+def num_simult (protein, partners, simultaneous):
+    
+    num_simult = []
+    for p in partners:
+        if p in simultaneous[protein]:
+            num_simult.append(len(simultaneous[protein][p]))
+        else:
+            num_simult.append(np.nan)
+    return num_simult

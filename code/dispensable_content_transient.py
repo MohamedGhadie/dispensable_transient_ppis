@@ -5,19 +5,21 @@
 import os
 import pickle
 import numpy as np
-import pandas as pd
 from pathlib import Path
 from text_tools import read_list_table
-from interactome_tools import num_partners, read_single_interface_annotated_interactome
-from perturbation_tools import unique_perturbation_mutations, perturbed_partner_max_degree
+from perturbation_tools import unique_perturbation_mutations, num_transient_perturbed_ppis
+from protein_function import (produce_illumina_expr_dict,
+                              produce_gtex_expr_dict,
+                              produce_hpa_expr_dict,
+                              produce_fantom5_expr_dict)
 from math_tools import fitness_effect
-from plot_tools import multi_histogram_plot, curve_plot
+from plot_tools import curve_plot
 
 def main():
     
     # reference interactome name
     # options: HI-II-14, IntAct
-    interactome_name = 'IntAct'
+    interactome_name = 'HI-II-14'
     
     # set to True to calculate dispensable PPI content using fraction of mono-edgetic mutations 
     # instead of all edgetic mutations
@@ -26,14 +28,22 @@ def main():
     # set to True to remove mutations that have no unique PPI perturbation
     unique_edgetics = False
     
+    # tissue expression database name
+    # options: Illumina, GTEx, HPA, Fantom5
+    expr_db = 'Fantom5'
+    
+    # minimum number of tissue expression values required for protein pair tissue
+    # co-expression to be considered
+    minTissues = 5
+    
+    # maximum co-expression level (not inclusive) for transient PPIs
+    maxCoexpr = 0.1
+    
     # calculate confidence interval for the fraction of dispensable PPIs
     computeConfidenceIntervals = True
     
     # % confidence interval
     CI = 95
-    
-    # minimum degree required for a protein hub
-    hubDegree = 20
     
     # Probability for new missense mutations to be neutral (N)
     pN = 0.27
@@ -47,7 +57,7 @@ def main():
     # Probability for strongly detrimental mutations (S) to be edgetic (E)
     pE_S = 0
     
-    pN_E_keys = ['All PPIs', 'Non-hub PPIs', 'Hub PPIs']
+    pN_E_keys = ['All PPIs', 'Permanent PPIs', 'Transient PPIs']
     
     pN_E, conf = {}, {}
     
@@ -56,6 +66,9 @@ def main():
     
     # parent directory of all data files
     dataDir = Path('../data')
+    
+    # directory of data files from external sources
+    extDir = dataDir / 'external'
     
     # parent directory of all processed data files
     procDir = dataDir / 'processed'
@@ -67,22 +80,64 @@ def main():
     figDir = Path('../figures') / interactome_name
     
     # input data files
-    referenceInteractomeFile = interactomeDir / 'reference_interactome.txt'
-    structuralInteractomeFile = interactomeDir / 'structural_interactome.txt'
+    illuminaExprFile = extDir / 'E-MTAB-513.tsv.txt'
+    gtexDir = extDir / 'GTEx_Analysis_v7_eQTL_expression_matrices'
+    hpaExprFile = extDir / 'normal_tissue.tsv'
+    fantomExprFile = extDir / 'hg38_fair+new_CAGE_peaks_phase1and2_tpm_ann.osc.txt'
+    fantomSampleTypeFile = extDir / 'fantom5_sample_type.xlsx'
+    uniprotIDmapFile = procDir / 'to_human_uniprotID_map.pkl'
+    uniqueGeneSwissProtIDFile = procDir / 'uniprot_unique_gene_reviewed_human_proteome.list'
     naturalMutationsFile = interactomeDir / 'nondisease_mutation_edgetics.txt'
     diseaseMutationsFile = interactomeDir / 'disease_mutation_edgetics.txt'
     
+    # output data files
+    proteinExprFile = procDir / ('protein_expr_%s.pkl' % expr_db)
+    
     # create output directories if not existing
-    if not interactomeDir.exists():
-        os.makedirs(interactomeDir)
     if not figDir.exists():
         os.makedirs(figDir)
-        
+    
+    #------------------------------------------------------------------------------------
+    # Produce tissue expression dictionary
+    #------------------------------------------------------------------------------------
+    
+    # produce protein tissue expression profiles
+    if not proteinExprFile.is_file():
+        print('\n' + 'producing protein tissue expression dictionary')
+        if expr_db is 'Illumina':
+            produce_illumina_expr_dict (illuminaExprFile,
+                                        uniprotIDmapFile,
+                                        proteinExprFile,
+                                        headers = list(range(1, 18)))
+        elif expr_db is 'GTEx':
+            produce_gtex_expr_dict (gtexDir,
+                                    uniprotIDmapFile,
+                                    proteinExprFile,
+                                    uniprotIDlistFile = uniqueGeneSwissProtIDFile)
+        elif expr_db is 'HPA':
+            produce_hpa_expr_dict (hpaExprFile,
+                                   uniprotIDmapFile,
+                                   proteinExprFile)
+        elif expr_db is 'Fantom5':
+            produce_fantom5_expr_dict (fantomExprFile,
+                                       uniprotIDmapFile,
+                                       proteinExprFile,
+                                       sampleTypes = 'tissues',
+                                       sampleTypeFile = fantomSampleTypeFile,
+                                       uniprotIDlistFile = uniqueGeneSwissProtIDFile)
+    
+    with open(proteinExprFile, 'rb') as f:
+        expr = pickle.load(f)
+    
+    if expr_db is 'HPA':
+        exprMap = {'Not detected':0, 'Low':1, 'Medium':2, 'High':3}
+        for k, v in expr.items():
+            expr[k] = np.array([(exprMap[e] if e in exprMap else np.nan) for e in v])
+    
     #------------------------------------------------------------------------------------
     # Load interactome perturbations
     #------------------------------------------------------------------------------------
     
-    print('Reading mutations')
     naturalMutations = read_list_table (naturalMutationsFile,
                                         ["partners", "perturbations"],
                                         [str, float])
@@ -95,61 +150,21 @@ def main():
     diseaseMutations = diseaseMutations [(diseaseMutations["edgotype"] == 'edgetic') |
                                          (diseaseMutations["edgotype"] == 'non-edgetic')].reset_index(drop=True)
     
-    ref_interactome = pd.read_table (referenceInteractomeFile, sep='\t')
-    numPartners = num_partners (ref_interactome)
-    
-    proteins, degrees = zip(* [(k, v) for k, v in numPartners.items()])
-    degrees = np.array(degrees)
-    nonhubs = [p for p, v in zip(proteins, degrees) if v < hubDegree]
-    hubs = [p for p, v in zip(proteins, degrees) if v >= hubDegree]
-    
-    print()
-    print('Fraction of hub proteins: %.1f%% (%d out of %d)' 
-          % (100 * len(hubs) / len(proteins),
-             len(hubs),
-             len(proteins)))
-    print('Fraction of non-hub proteins: %.1f%% (%d out of %d)' 
-          % (100 * len(nonhubs) / len(proteins),
-             len(nonhubs),
-             len(proteins)))
-    
-    multi_histogram_plot (degrees,
-                          xlabel = 'Protein interaction degree',
-                          ylabel = 'Frequency',
-                          edgecolor = 'k',
-                          fontsize = 16,
-                          bins = 50,
-                          alpha = 1,
-                          show = showFigs,
-                          figdir = figDir,
-                          figname = 'protein_degree_dist')
-    
-    struc_interactome = read_single_interface_annotated_interactome (structuralInteractomeFile)
-    struc_proteins = set(struc_interactome [["Protein_1", "Protein_2"]].values.flatten())
-    struc_nonhubs = struc_proteins & set(nonhubs)
-    struc_hubs = struc_proteins & set(hubs)
-    
-    print()
-    print('Fraction of hub proteins that are in structural interactome: %.1f%% (%d out of %d)' 
-          % (100 * len(struc_hubs) / len(hubs),
-             len(struc_hubs),
-             len(hubs)))
-    print('Fraction of non-hub proteins that are in structural interactome: %.1f%% (%d out of %d)' 
-          % (100 * len(struc_nonhubs) / len(nonhubs),
-             len(struc_nonhubs),
-             len(nonhubs)))
-    
-    naturalMutations ["perturbed_partner_max_degree"] = naturalMutations.apply(lambda x:
-                                                        perturbed_partner_max_degree (x["protein"],
+    naturalMutations ["num_transient_perturbed_ppis"] = naturalMutations.apply(lambda x:
+                                                        num_transient_perturbed_ppis (x["protein"],
                                                                                       x["partners"],
                                                                                       x["perturbations"],
-                                                                                      numPartners), axis=1)
-    diseaseMutations ["perturbed_partner_max_degree"] = diseaseMutations.apply(lambda x:
-                                                        perturbed_partner_max_degree (x["protein"],
+                                                                                      expr,
+                                                                                      minTissues = minTissues,
+                                                                                      maxCoexpr = maxCoexpr), axis=1)
+    diseaseMutations ["num_transient_perturbed_ppis"] = diseaseMutations.apply(lambda x:
+                                                        num_transient_perturbed_ppis (x["protein"],
                                                                                       x["partners"],
                                                                                       x["perturbations"],
-                                                                                      numPartners), axis=1)
-        
+                                                                                      expr,
+                                                                                      minTissues = minTissues,
+                                                                                      maxCoexpr = maxCoexpr), axis=1)
+    
     #------------------------------------------------------------------------------------
     # Remove mutations with no unique PPI perturbation
     #------------------------------------------------------------------------------------
@@ -159,7 +174,7 @@ def main():
         diseaseMutations = diseaseMutations [unique_perturbation_mutations (diseaseMutations)].reset_index(drop=True)
     
     #------------------------------------------------------------------------------------
-    # Fraction of dispensable PPIs among all proteins
+    # Dispensable content among all PPIs
     #------------------------------------------------------------------------------------
     
     if mono_edgetic:
@@ -176,7 +191,7 @@ def main():
     numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
     
     print()
-    print('Fitness effect for PPI disruption among all proteins:')
+    print('Fitness effect for disruption among all PPIs:')
     
     all_effects = fitness_effect (pN,
                                   pM,
@@ -197,19 +212,19 @@ def main():
             conf[pN_E_keys[0]] = 100 * lower, 100 * upper
     
     #------------------------------------------------------------------------------------
-    # Dispensable content among non-hub PPIs
+    # Dispensable content among permanent PPIs
     #------------------------------------------------------------------------------------
     
     if mono_edgetic:
         numNaturalMut_edgetic = sum((naturalMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (naturalMutations["perturbed_partner_max_degree"] < hubDegree))
+                                    (naturalMutations["num_transient_perturbed_ppis"] == 0))
         numDiseaseMut_edgetic = sum((diseaseMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (diseaseMutations["perturbed_partner_max_degree"] < hubDegree))
+                                    (diseaseMutations["num_transient_perturbed_ppis"] == 0))
     else:
         numNaturalMut_edgetic = sum((naturalMutations["edgotype"] == 'edgetic') & 
-                                    (naturalMutations["perturbed_partner_max_degree"] < hubDegree))
+                                    (naturalMutations["num_transient_perturbed_ppis"] == 0))
         numDiseaseMut_edgetic = sum((diseaseMutations["edgotype"] == 'edgetic') & 
-                                    (diseaseMutations["perturbed_partner_max_degree"] < hubDegree))
+                                    (diseaseMutations["num_transient_perturbed_ppis"] == 0))
 
     numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
     numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic
@@ -218,7 +233,7 @@ def main():
     numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
     
     print()
-    print('Fitness effect for PPI disruption among non-hub proteins:')
+    print('Fitness effect for disruption of permanent PPIs:')
     
     all_effects = fitness_effect (pN,
                                   pM,
@@ -239,19 +254,19 @@ def main():
             conf[pN_E_keys[1]] = 100 * lower, 100 * upper
     
     #------------------------------------------------------------------------------------
-    # Fraction of dispensable PPIs among hub proteins
+    # Dispensable content among transient PPIs
     #------------------------------------------------------------------------------------
     
     if mono_edgetic:
         numNaturalMut_edgetic = sum((naturalMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (naturalMutations["perturbed_partner_max_degree"] >= hubDegree))
+                                    (naturalMutations["num_transient_perturbed_ppis"] > 0))
         numDiseaseMut_edgetic = sum((diseaseMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (diseaseMutations["perturbed_partner_max_degree"] >= hubDegree))
+                                    (diseaseMutations["num_transient_perturbed_ppis"] > 0))
     else:
         numNaturalMut_edgetic = sum((naturalMutations["edgotype"] == 'edgetic') & 
-                                    (naturalMutations["perturbed_partner_max_degree"] >= hubDegree))
+                                    (naturalMutations["num_transient_perturbed_ppis"] > 0))
         numDiseaseMut_edgetic = sum((diseaseMutations["edgotype"] == 'edgetic') & 
-                                    (diseaseMutations["perturbed_partner_max_degree"] >= hubDegree))
+                                    (diseaseMutations["num_transient_perturbed_ppis"] > 0))
 
     numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
     numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic
@@ -260,8 +275,11 @@ def main():
     numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
     
     print()
-    print('Fitness effect for PPI disruption among hub proteins:')
-    
+    print('Fitness effect for disruption of transient PPIs:')
+    print(numNaturalMut_edgetic)
+    print(numNaturalMut_considered)
+    print(numDiseaseMut_edgetic)
+    print(numDiseaseMut_considered)
     all_effects = fitness_effect (pN,
                                   pM,
                                   pS,
@@ -285,14 +303,15 @@ def main():
     #------------------------------------------------------------------------------------
     
     numGroups = len(pN_E.keys())
+    numGroups = 3
     if computeConfidenceIntervals:
         maxY = max([pN_E[p] + conf[p][1] for p in pN_E.keys()])
     else:
         maxY = max(pN_E.values())
     maxY = 10 * np.ceil(maxY / 10)
     
-    curve_plot ([pN_E[p] for p in pN_E_keys if p in pN_E],
-                error = [conf[p] for p in pN_E_keys if p in pN_E] if computeConfidenceIntervals else None,
+    curve_plot ([(pN_E[p] if p in pN_E else np.nan) for p in pN_E_keys],
+                error = [(conf[p] if p in pN_E else [np.nan, np.nan]) for p in pN_E_keys] if computeConfidenceIntervals else None,
                 xlim = [0.8, numGroups + 0.1],
                 ylim = [0, maxY],
                 styles = '.k',
@@ -303,15 +322,15 @@ def main():
                 ylabel = 'Fraction of dispensable PPIs (%)',
                 yMinorTicks = 4,
                 xticks = list(np.arange(1, numGroups + 1)),
-                xticklabels = [p for p in pN_E_keys if p in pN_E],
+                xticklabels = pN_E_keys,
                 yticklabels = list(np.arange(0, maxY + 10, 10)),
-                fontsize = 20,
+                fontsize = 18,
                 adjustBottom = 0.2,
                 shiftBottomAxis = -0.1,
                 xbounds = (1, numGroups),
                 show = showFigs,
                 figdir = figDir,
-                figname = 'Fraction_disp_PPIs_hubs')
+                figname = 'Fraction_disp_PPIs_transient_%s' % expr_db)
 
 if __name__ == "__main__":
     main()

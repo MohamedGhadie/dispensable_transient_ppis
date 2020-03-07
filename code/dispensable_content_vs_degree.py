@@ -13,10 +13,9 @@ import pickle
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from text_tools import read_list_table
 from interactome_tools import num_partners
-from mutation_interface_edgotype import (assign_edgotypes,
-                                         unique_perturbation_mutations,
-                                         perturbed_partner_max_degree)
+from perturbation_tools import unique_perturbation_mutations, perturbed_partner_max_degree
 from math_tools import fitness_effect
 from plot_tools import bar_plot, curve_plot
 
@@ -24,7 +23,7 @@ def main():
     
     # reference interactome name
     # options: HI-II-14, IntAct
-    interactome_name = 'IntAct'
+    interactome_name = 'HI-II-14'
     
     # set to True to calculate dispensable PPI content using fraction of mono-edgetic mutations 
     # instead of all edgetic mutations
@@ -67,9 +66,10 @@ def main():
     figDir = Path('../figures') / interactome_name
     
     # input data files
-    referenceInteractomeFile = interactomeDir / 'human_interactome.txt'
-    structuralInteractomeFile = interactomeDir / 'human_interface_annotated_interactome.txt'
-    mutationPerturbsFile = interactomeDir / 'unique_mutation_perturbs_geometry.pkl'
+    referenceInteractomeFile = interactomeDir / 'reference_interactome.txt'
+    structuralInteractomeFile = interactomeDir / 'structural_interactome.txt'
+    naturalMutationsFile = interactomeDir / 'nondisease_mutation_edgetics.txt'
+    diseaseMutationsFile = interactomeDir / 'disease_mutation_edgetics.txt'
         
     # create output directories if not existing
     if not interactomeDir.exists():
@@ -78,11 +78,40 @@ def main():
         os.makedirs(figDir)
     
     #------------------------------------------------------------------------------------
-    # Load interactome perturbations
+    # load mutations
     #------------------------------------------------------------------------------------
     
-    with open(mutationPerturbsFile, 'rb') as f:
-        naturalPerturbs, diseasePerturbs = pickle.load(f)
+    print('Reading mutations')
+    naturalMutations = read_list_table (naturalMutationsFile,
+                                        ["partners", "perturbations"],
+                                        [str, float])
+    diseaseMutations = read_list_table (diseaseMutationsFile,
+                                        ["partners", "perturbations"],
+                                        [str, float])
+    
+    naturalMutations = naturalMutations [(naturalMutations["edgotype"] == 'edgetic') |
+                                         (naturalMutations["edgotype"] == 'non-edgetic')].reset_index(drop=True)
+    diseaseMutations = diseaseMutations [(diseaseMutations["edgotype"] == 'edgetic') |
+                                         (diseaseMutations["edgotype"] == 'non-edgetic')].reset_index(drop=True)
+    
+    print('Number of mutations:')
+    print('non-disease mutations: %d' % len(naturalMutations))
+    print('disease mutations: %d' % len(diseaseMutations))
+    print()
+    
+    natMutationProteins = set(naturalMutations["protein"].tolist())
+    disMutationProteins = set(diseaseMutations["protein"].tolist())
+    mutationProteins = natMutationProteins | disMutationProteins
+    
+    print('Number of proteins carrying mutations:')
+    print('non-disease mutations: %d' % len(natMutationProteins))
+    print('disease mutations: %d' % len(disMutationProteins))
+    print('all mutations: %d' % len(mutationProteins))
+    print()
+    
+    #------------------------------------------------------------------------------------
+    # Load interactome data
+    #------------------------------------------------------------------------------------
     
     ref_interactome = pd.read_table (referenceInteractomeFile, sep='\t')
     numPartners = num_partners (ref_interactome)
@@ -100,50 +129,30 @@ def main():
 #               show = showFigs,
 #               figdir = figDir,
 #               figname = 'protein_degree_dist')
-    
-    naturalPerturbs ["perturbed_partner_max_degree"] = naturalPerturbs.apply(lambda x:
+
+    #------------------------------------------------------------------------------------
+    # Calculate the maximum interaction degree among proteins whose interactions are 
+    # disrupted by each mutation
+    #------------------------------------------------------------------------------------
+        
+    naturalMutations ["perturbed_partner_max_degree"] = naturalMutations.apply(lambda x:
                                                         perturbed_partner_max_degree (x["protein"],
                                                                                       x["partners"],
                                                                                       x["perturbations"],
                                                                                       numPartners), axis=1)
-    diseasePerturbs ["perturbed_partner_max_degree"] = diseasePerturbs.apply(lambda x:
+    diseaseMutations ["perturbed_partner_max_degree"] = diseaseMutations.apply(lambda x:
                                                         perturbed_partner_max_degree (x["protein"],
                                                                                       x["partners"],
                                                                                       x["perturbations"],
                                                                                       numPartners), axis=1)
-    
-    #------------------------------------------------------------------------------------
-    # Assign mutation edgotypes
-    #------------------------------------------------------------------------------------
-    
-    print( '\n' + 'Labeling mutation edgotypes:' )
-    print( '%d non-disease mutations' % len(naturalPerturbs) )
-    print( '%d disease mutations' % len(diseasePerturbs) )
-    
-    naturalPerturbs["edgotype"] = assign_edgotypes (naturalPerturbs["perturbations"].tolist(),
-                                                    mono_edgetic = False)
-    diseasePerturbs["edgotype"] = assign_edgotypes (diseasePerturbs["perturbations"].tolist(),
-                                                    mono_edgetic = False)
-    
-    naturalPerturbs = naturalPerturbs [naturalPerturbs["edgotype"] != '-'].reset_index(drop=True)
-    diseasePerturbs = diseasePerturbs [diseasePerturbs["edgotype"] != '-'].reset_index(drop=True)
-    
-    if mono_edgetic:
-        print( '\n' + 'Labeling mono-edgetic mutations' )
-        naturalPerturbs["mono-edgotype"] = assign_edgotypes (naturalPerturbs["perturbations"].tolist(),
-                                                             mono_edgetic = True)
-        diseasePerturbs["mono-edgotype"] = assign_edgotypes (diseasePerturbs["perturbations"].tolist(),
-                                                             mono_edgetic = True)
-        naturalPerturbs = naturalPerturbs [naturalPerturbs["mono-edgotype"] != '-'].reset_index(drop=True)
-        diseasePerturbs = diseasePerturbs [diseasePerturbs["mono-edgotype"] != '-'].reset_index(drop=True)
-    
+        
     #------------------------------------------------------------------------------------
     # Remove mutations with no unique PPI perturbation
     #------------------------------------------------------------------------------------
     
     if unique_edgetics:
-        naturalPerturbs = naturalPerturbs [unique_perturbation_mutations (naturalPerturbs)].reset_index(drop=True)
-        diseasePerturbs = diseasePerturbs [unique_perturbation_mutations (diseasePerturbs)].reset_index(drop=True)
+        naturalMutations = naturalMutations [unique_perturbation_mutations (naturalMutations)].reset_index(drop=True)
+        diseaseMutations = diseaseMutations [unique_perturbation_mutations (diseaseMutations)].reset_index(drop=True)
     
     #------------------------------------------------------------------------------------
     # Fraction of predicted edgetic mutations
@@ -153,18 +162,18 @@ def main():
     pN_E_high_degree, pN_E_high, conf_high = [], [], []
     for minDegree in degRange:
         if mono_edgetic:
-            numNaturalMut_edgetic = sum((naturalPerturbs["mono-edgotype"] == 'mono-edgetic') &
-                                        (naturalPerturbs["perturbed_partner_max_degree"] >= minDegree))
-            numDiseaseMut_edgetic = sum((diseasePerturbs["mono-edgotype"] == 'mono-edgetic') &
-                                        (diseasePerturbs["perturbed_partner_max_degree"] >= minDegree))
+            numNaturalMut_edgetic = sum((naturalMutations["mono-edgotype"] == 'mono-edgetic') &
+                                        (naturalMutations["perturbed_partner_max_degree"] >= minDegree))
+            numDiseaseMut_edgetic = sum((diseaseMutations["mono-edgotype"] == 'mono-edgetic') &
+                                        (diseaseMutations["perturbed_partner_max_degree"] >= minDegree))
         else:
-            numNaturalMut_edgetic = sum((naturalPerturbs["edgotype"] == 'edgetic') & 
-                                        (naturalPerturbs["perturbed_partner_max_degree"] >= minDegree))
-            numDiseaseMut_edgetic = sum((diseasePerturbs["edgotype"] == 'edgetic') & 
-                                        (diseasePerturbs["perturbed_partner_max_degree"] >= minDegree))
+            numNaturalMut_edgetic = sum((naturalMutations["edgotype"] == 'edgetic') & 
+                                        (naturalMutations["perturbed_partner_max_degree"] >= minDegree))
+            numDiseaseMut_edgetic = sum((diseaseMutations["edgotype"] == 'edgetic') & 
+                                        (diseaseMutations["perturbed_partner_max_degree"] >= minDegree))
     
-        numNaturalMut_nonedgetic = len(naturalPerturbs) - numNaturalMut_edgetic
-        numDiseaseMut_nonedgetic = len(diseasePerturbs) - numDiseaseMut_edgetic
+        numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
+        numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic
     
         numNaturalMut_considered = numNaturalMut_edgetic + numNaturalMut_nonedgetic
         numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
@@ -191,18 +200,18 @@ def main():
     pN_E_low_degree, pN_E_low, conf_low = [], [], []
     for maxDegree in degRange:
         if mono_edgetic:
-            numNaturalMut_edgetic = sum((naturalPerturbs["mono-edgotype"] == 'mono-edgetic') &
-                                        (naturalPerturbs["perturbed_partner_max_degree"] < maxDegree))
-            numDiseaseMut_edgetic = sum((diseasePerturbs["mono-edgotype"] == 'mono-edgetic') &
-                                        (diseasePerturbs["perturbed_partner_max_degree"] < maxDegree))
+            numNaturalMut_edgetic = sum((naturalMutations["mono-edgotype"] == 'mono-edgetic') &
+                                        (naturalMutations["perturbed_partner_max_degree"] < maxDegree))
+            numDiseaseMut_edgetic = sum((diseaseMutations["mono-edgotype"] == 'mono-edgetic') &
+                                        (diseaseMutations["perturbed_partner_max_degree"] < maxDegree))
         else:
-            numNaturalMut_edgetic = sum((naturalPerturbs["edgotype"] == 'edgetic') & 
-                                        (naturalPerturbs["perturbed_partner_max_degree"] < maxDegree))
-            numDiseaseMut_edgetic = sum((diseasePerturbs["edgotype"] == 'edgetic') & 
-                                        (diseasePerturbs["perturbed_partner_max_degree"] < maxDegree))
+            numNaturalMut_edgetic = sum((naturalMutations["edgotype"] == 'edgetic') & 
+                                        (naturalMutations["perturbed_partner_max_degree"] < maxDegree))
+            numDiseaseMut_edgetic = sum((diseaseMutations["edgotype"] == 'edgetic') & 
+                                        (diseaseMutations["perturbed_partner_max_degree"] < maxDegree))
     
-        numNaturalMut_nonedgetic = len(naturalPerturbs) - numNaturalMut_edgetic
-        numDiseaseMut_nonedgetic = len(diseasePerturbs) - numDiseaseMut_edgetic
+        numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
+        numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic
     
         numNaturalMut_considered = numNaturalMut_edgetic + numNaturalMut_nonedgetic
         numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
