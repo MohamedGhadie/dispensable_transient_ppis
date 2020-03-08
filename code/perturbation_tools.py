@@ -1,5 +1,5 @@
 import numpy as np
-from protein_function import is_transient, is_permanent
+from protein_function import is_transient
 
 def unique_perturbation_mutations (mutations):
     
@@ -23,6 +23,14 @@ def unique_perturbation_mutations (mutations):
         uniques.append(keep)
     return uniques
 
+def num_hub_ppis_perturbed (perturbs, hubPPIs):
+    
+    return sum([hub == 'hub PPI' for pert, hub in zip(perturbs, hubPPIs) if pert > 0])
+
+def num_nonhub_ppis_perturbed (perturbs, hubPPIs):
+    
+    return sum([hub == 'non-hub PPI' for pert, hub in zip(perturbs, hubPPIs) if pert > 0])
+
 def perturbed_partner_max_degree (protein, partners, perturbs, degree):
     
     d = perturbed_partner_degrees (protein, partners, perturbs, degree)
@@ -39,33 +47,41 @@ def perturbed_partner_degrees (protein, partners, perturbs, degree):
     else:
         return None
 
-def num_transient_perturbed_ppis (protein,
-                                  partners,
-                                  perturbs,
-                                  expr,
-                                  minTissues = 3,
-                                  maxCoexpr = 0.05):
+def num_transient_ppis_perturbed (perturbs, transients):
     
-    num = 0
-    for p, pert in zip(partners, perturbs):
-        if pert > 0:
-            if is_transient (protein, p, expr, minTissues = minTissues, maxCoexpr = maxCoexpr):
-                num += 1
-    return num
+    return sum([trans == 'transient' for pert, trans in zip(perturbs, transients) if pert > 0])
 
-def num_permanent_perturbed_ppis (protein,
-                                  partners,
-                                  perturbs,
-                                  expr,
-                                  minTissues = 3,
-                                  minCoexpr = 0.05):
+def num_permanent_ppis_perturbed (perturbs, transients):
     
-    num = 0
-    for p, pert in zip(partners, perturbs):
-        if pert > 0:
-            if is_permanent (protein, p, expr, minTissues = minTissues, minCoexpr = minCoexpr):
-                num += 1
-    return num
+    return sum([trans == 'permanent' for pert, trans in zip(perturbs, transients) if pert > 0])
+
+# def num_transient_ppis_perturbed (protein,
+#                                   partners,
+#                                   perturbs,
+#                                   expr,
+#                                   minTissues = 3,
+#                                   maxCoexpr = 0.05):
+#     
+#     num = 0
+#     for p, pert in zip(partners, perturbs):
+#         if pert > 0:
+#             if is_transient (protein, p, expr, minTissues = minTissues, maxCoexpr = maxCoexpr):
+#                 num += 1
+#     return num
+# 
+# def num_permanent_perturbed_ppis (protein,
+#                                   partners,
+#                                   perturbs,
+#                                   expr,
+#                                   minTissues = 3,
+#                                   minCoexpr = 0.05):
+#     
+#     num = 0
+#     for p, pert in zip(partners, perturbs):
+#         if pert > 0:
+#             if is_permanent (protein, p, expr, minTissues = minTissues, minCoexpr = minCoexpr):
+#                 num += 1
+#     return num
 
 def num_perturbed_ppis (perturbations):
     

@@ -3,13 +3,16 @@
 #----------------------------------------------------------------------------------------
 
 import os
-import pickle
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from text_tools import read_list_table
-from interactome_tools import num_partners, read_single_interface_annotated_interactome
-from perturbation_tools import unique_perturbation_mutations, perturbed_partner_max_degree
+from text_tools import read_list_table, write_list_table
+from interactome_tools import (num_partners,
+                               is_hub_ppi,
+                               read_single_interface_annotated_interactome)
+from perturbation_tools import (unique_perturbation_mutations,
+                                num_nonhub_ppis_perturbed,
+                                num_hub_ppis_perturbed)
 from math_tools import fitness_effect
 from plot_tools import multi_histogram_plot, curve_plot
 
@@ -64,13 +67,17 @@ def main():
     interactomeDir = procDir / interactome_name
     
     # figure directory
-    figDir = Path('../figures') / interactome_name
+    figDir = Path('../figures') / interactome_name / 'strict'
     
     # input data files
     referenceInteractomeFile = interactomeDir / 'reference_interactome.txt'
     structuralInteractomeFile = interactomeDir / 'structural_interactome.txt'
     naturalMutationsFile = interactomeDir / 'nondisease_mutation_edgetics.txt'
     diseaseMutationsFile = interactomeDir / 'disease_mutation_edgetics.txt'
+    
+    # output data files
+    natMutOutFile = interactomeDir / 'nondisease_mutation_hub_perturbs.txt'
+    disMutOutFile = interactomeDir / 'disease_mutation_hub_perturbs.txt'
     
     # create output directories if not existing
     if not interactomeDir.exists():
@@ -89,7 +96,10 @@ def main():
     diseaseMutations = read_list_table (diseaseMutationsFile,
                                         ["partners", "perturbations"],
                                         [str, float])
-    
+    naturalMutations["perturbations"] = naturalMutations["perturbations"].apply(
+                                            lambda x: [int(p) if not np.isnan(p) else p for p in x])
+    diseaseMutations["perturbations"] = diseaseMutations["perturbations"].apply(
+                                            lambda x: [int(p) if not np.isnan(p) else p for p in x])
     naturalMutations = naturalMutations [(naturalMutations["edgotype"] == 'edgetic') |
                                          (naturalMutations["edgotype"] == 'non-edgetic')].reset_index(drop=True)
     diseaseMutations = diseaseMutations [(diseaseMutations["edgotype"] == 'edgetic') |
@@ -139,16 +149,52 @@ def main():
              len(struc_nonhubs),
              len(nonhubs)))
     
-    naturalMutations ["perturbed_partner_max_degree"] = naturalMutations.apply(lambda x:
-                                                        perturbed_partner_max_degree (x["protein"],
-                                                                                      x["partners"],
-                                                                                      x["perturbations"],
-                                                                                      numPartners), axis=1)
-    diseaseMutations ["perturbed_partner_max_degree"] = diseaseMutations.apply(lambda x:
-                                                        perturbed_partner_max_degree (x["protein"],
-                                                                                      x["partners"],
-                                                                                      x["perturbations"],
-                                                                                      numPartners), axis=1)
+    naturalMutations ["hub_interactions"] = naturalMutations.apply (lambda x: 
+                                                                    [is_hub_ppi (x["protein"],
+                                                                                 p,
+                                                                                 numPartners,
+                                                                                 hubDegree = hubDegree)
+                                                                     for p in x["partners"]], axis=1)
+    diseaseMutations ["hub_interactions"] = diseaseMutations.apply (lambda x: 
+                                                                    [is_hub_ppi (x["protein"],
+                                                                                 p,
+                                                                                 numPartners,
+                                                                                 hubDegree = hubDegree)
+                                                                     for p in x["partners"]], axis=1)
+    
+    write_list_table (naturalMutations, ["partners", "perturbations", "hub_interactions"], natMutOutFile)
+    write_list_table (diseaseMutations, ["partners", "perturbations", "hub_interactions"], disMutOutFile)
+    
+    natMut_numNonHubPerturbs = naturalMutations.apply (lambda x:
+                                                       num_nonhub_ppis_perturbed (x["perturbations"],
+                                                                                  x["hub_interactions"]), 
+                                                                                  axis=1)
+    disMut_numNonHubPerturbs = diseaseMutations.apply (lambda x:
+                                                       num_nonhub_ppis_perturbed (x["perturbations"],
+                                                                                  x["hub_interactions"]), 
+                                                                                  axis=1)
+    natMut_numHubPerturbs = naturalMutations.apply (lambda x:
+                                                    num_hub_ppis_perturbed (x["perturbations"],
+                                                                            x["hub_interactions"]), 
+                                                                            axis=1)
+    disMut_numHubPerturbs = diseaseMutations.apply (lambda x:
+                                                    num_hub_ppis_perturbed (x["perturbations"],
+                                                                            x["hub_interactions"]), 
+                                                                            axis=1)
+        
+#     naturalMutations ["hub_interactions"] = natMut_hub_ppis.apply(lambda x: [1 if p else 0 for p in x])
+#     diseaseMutations ["hub_interactions"] = disMut_hub_ppis.apply(lambda x: [1 if p else 0 for p in x])
+    
+#     naturalMutations ["perturbed_partner_max_degree"] = naturalMutations.apply(lambda x:
+#                                                         perturbed_partner_max_degree (x["protein"],
+#                                                                                       x["partners"],
+#                                                                                       x["perturbations"],
+#                                                                                       numPartners), axis=1)
+#     diseaseMutations ["perturbed_partner_max_degree"] = diseaseMutations.apply(lambda x:
+#                                                         perturbed_partner_max_degree (x["protein"],
+#                                                                                       x["partners"],
+#                                                                                       x["perturbations"],
+#                                                                                       numPartners), axis=1)
         
     #------------------------------------------------------------------------------------
     # Remove mutations with no unique PPI perturbation
@@ -202,14 +248,14 @@ def main():
     
     if mono_edgetic:
         numNaturalMut_edgetic = sum((naturalMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (naturalMutations["perturbed_partner_max_degree"] < hubDegree))
+                                    (natMut_numNonHubPerturbs > 0))
         numDiseaseMut_edgetic = sum((diseaseMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (diseaseMutations["perturbed_partner_max_degree"] < hubDegree))
+                                    (disMut_numNonHubPerturbs > 0))
     else:
         numNaturalMut_edgetic = sum((naturalMutations["edgotype"] == 'edgetic') & 
-                                    (naturalMutations["perturbed_partner_max_degree"] < hubDegree))
+                                    (natMut_numNonHubPerturbs > 0))
         numDiseaseMut_edgetic = sum((diseaseMutations["edgotype"] == 'edgetic') & 
-                                    (diseaseMutations["perturbed_partner_max_degree"] < hubDegree))
+                                    (disMut_numNonHubPerturbs > 0))
 
     numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
     numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic
@@ -244,14 +290,18 @@ def main():
     
     if mono_edgetic:
         numNaturalMut_edgetic = sum((naturalMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (naturalMutations["perturbed_partner_max_degree"] >= hubDegree))
+                                    (natMut_numNonHubPerturbs == 0) &
+                                    (natMut_numHubPerturbs > 0))
         numDiseaseMut_edgetic = sum((diseaseMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (diseaseMutations["perturbed_partner_max_degree"] >= hubDegree))
+                                    (disMut_numNonHubPerturbs == 0) &
+                                    (disMut_numHubPerturbs > 0))
     else:
         numNaturalMut_edgetic = sum((naturalMutations["edgotype"] == 'edgetic') & 
-                                    (naturalMutations["perturbed_partner_max_degree"] >= hubDegree))
+                                    (natMut_numNonHubPerturbs == 0) &
+                                    (natMut_numHubPerturbs > 0))
         numDiseaseMut_edgetic = sum((diseaseMutations["edgotype"] == 'edgetic') & 
-                                    (diseaseMutations["perturbed_partner_max_degree"] >= hubDegree))
+                                    (disMut_numNonHubPerturbs == 0) &
+                                    (disMut_numHubPerturbs > 0))
 
     numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
     numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic

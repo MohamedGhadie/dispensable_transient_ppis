@@ -6,9 +6,11 @@ import os
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from text_tools import read_list_table
-from interactome_tools import num_partners
-from perturbation_tools import unique_perturbation_mutations, perturbed_partner_max_degree
+from text_tools import read_list_table, write_list_table
+from interactome_tools import num_partners, is_hub_ppi
+from perturbation_tools import (unique_perturbation_mutations,
+                                num_nonhub_ppis_perturbed,
+                                num_hub_ppis_perturbed)
 from math_tools import fitness_effect
 from plot_tools import multi_histogram_plot, curve_plot
 
@@ -28,7 +30,7 @@ def main():
     CI = 95
     
     # minimum degree required for a protein hub
-    hub_deg = 20
+    hubDegree = 20
     
     # Probability for new missense mutations to be neutral (N)
     pN = 0.27
@@ -61,6 +63,10 @@ def main():
     referenceInteractomeFile = interactomeDir / 'reference_interactome.txt'
     naturalMutationsFile = interactomeDir / 'nondisease_mutation_edgotype_experiment.txt'
     diseaseMutationsFile = interactomeDir / 'disease_mutation_edgotype_experiment.txt'
+    
+    # output data files
+    natMutOutFile = interactomeDir / 'nondisease_mutation_hub_perturbs.txt'
+    disMutOutFile = interactomeDir / 'disease_mutation_hub_perturbs.txt'
     
     # create output directories if not existing
     if not interactomeDir.exists():
@@ -133,8 +139,8 @@ def main():
     
     proteins, degrees = zip(* [(k, v) for k, v in numPartners.items()])
     degrees = np.array(degrees)
-    hubs = [p for p, v in zip(proteins, degrees) if v >= hub_deg]
-    nonhubs = [p for p, v in zip(proteins, degrees) if v < hub_deg]
+    hubs = [p for p, v in zip(proteins, degrees) if v >= hubDegree]
+    nonhubs = [p for p, v in zip(proteins, degrees) if v < hubDegree]
     
     print()
     print('Fraction of hub proteins: %.1f%% (%d out of %d)' 
@@ -157,19 +163,52 @@ def main():
                           figdir = figDir,
                           figname = 'protein_degree_dist')
     
-    naturalMutations ["perturbed_partner_max_degree"] = naturalMutations.apply(lambda x:
-                                                        perturbed_partner_max_degree (x["Entrez_Gene_ID"],
-                                                                                      x["partners"],
-                                                                                      x["perturbations"],
-                                                                                      numPartners), axis=1)
-    diseaseMutations ["perturbed_partner_max_degree"] = diseaseMutations.apply(lambda x:
-                                                        perturbed_partner_max_degree (x["Entrez_Gene_ID"],
-                                                                                      x["partners"],
-                                                                                      x["perturbations"],
-                                                                                      numPartners), axis=1)
+    naturalMutations ["hub_interactions"] = naturalMutations.apply (lambda x: 
+                                                                    [is_hub_ppi (x["Entrez_Gene_ID"],
+                                                                                 p,
+                                                                                 numPartners,
+                                                                                 hubDegree = hubDegree)
+                                                                     for p in x["partners"]], axis=1)
+    diseaseMutations ["hub_interactions"] = diseaseMutations.apply (lambda x: 
+                                                                    [is_hub_ppi (x["Entrez_Gene_ID"],
+                                                                                 p,
+                                                                                 numPartners,
+                                                                                 hubDegree = hubDegree)
+                                                                     for p in x["partners"]], axis=1)
+    
+    write_list_table (naturalMutations, ["partners", "perturbations", "hub_interactions"], natMutOutFile)
+    write_list_table (diseaseMutations, ["partners", "perturbations", "hub_interactions"], disMutOutFile)
+    
+    natMut_numNonHubPerturbs = naturalMutations.apply (lambda x:
+                                                       num_nonhub_ppis_perturbed (x["perturbations"],
+                                                                                  x["hub_interactions"]), 
+                                                                                  axis=1)
+    disMut_numNonHubPerturbs = diseaseMutations.apply (lambda x:
+                                                       num_nonhub_ppis_perturbed (x["perturbations"],
+                                                                                  x["hub_interactions"]), 
+                                                                                  axis=1)
+    natMut_numHubPerturbs = naturalMutations.apply (lambda x:
+                                                    num_hub_ppis_perturbed (x["perturbations"],
+                                                                            x["hub_interactions"]), 
+                                                                            axis=1)
+    disMut_numHubPerturbs = diseaseMutations.apply (lambda x:
+                                                    num_hub_ppis_perturbed (x["perturbations"],
+                                                                            x["hub_interactions"]), 
+                                                                            axis=1)
+    
+#     naturalMutations ["perturbed_partner_max_degree"] = naturalMutations.apply(lambda x:
+#                                                         perturbed_partner_max_degree (x["Entrez_Gene_ID"],
+#                                                                                       x["partners"],
+#                                                                                       x["perturbations"],
+#                                                                                       numPartners), axis=1)
+#     diseaseMutations ["perturbed_partner_max_degree"] = diseaseMutations.apply(lambda x:
+#                                                         perturbed_partner_max_degree (x["Entrez_Gene_ID"],
+#                                                                                       x["partners"],
+#                                                                                       x["perturbations"],
+#                                                                                       numPartners), axis=1)
     
     #------------------------------------------------------------------------------------
-    # Fraction of dispensable PPIs among all proteins
+    # dispensable content among all PPIs
     #------------------------------------------------------------------------------------
     
     numNaturalMut_edgetic = sum(naturalMutations["Edgotype_class"] == 'Edgetic')
@@ -199,13 +238,13 @@ def main():
         conf_all = 100 * lower, 100 * upper
     
     #------------------------------------------------------------------------------------
-    # Fraction of dispensable PPIs among non-hub proteins
+    # dispensable content among non-hub PPIs
     #------------------------------------------------------------------------------------
     
     numNaturalMut_edgetic = sum((naturalMutations["Edgotype_class"] == 'Edgetic') & 
-                                (naturalMutations["perturbed_partner_max_degree"] < hub_deg))
+                                (natMut_numNonHubPerturbs > 0))
     numDiseaseMut_edgetic = sum((diseaseMutations["Edgotype_class"] == 'Edgetic') & 
-                                (diseaseMutations["perturbed_partner_max_degree"] < hub_deg))
+                                (disMut_numNonHubPerturbs > 0))
     
     numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
     numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic
@@ -231,13 +270,15 @@ def main():
         conf_nohub = 100 * lower, 100 * upper
     
     #------------------------------------------------------------------------------------
-    # Fraction of dispensable PPIs among hub proteins
+    # dispensable content among hub PPIs
     #------------------------------------------------------------------------------------
     
     numNaturalMut_edgetic = sum((naturalMutations["Edgotype_class"] == 'Edgetic') & 
-                                (naturalMutations["perturbed_partner_max_degree"] >= hub_deg))
+                                (natMut_numNonHubPerturbs == 0) &
+                                (natMut_numHubPerturbs > 0))
     numDiseaseMut_edgetic = sum((diseaseMutations["Edgotype_class"] == 'Edgetic') & 
-                                (diseaseMutations["perturbed_partner_max_degree"] >= hub_deg))
+                                (disMut_numNonHubPerturbs == 0) &
+                                (disMut_numHubPerturbs > 0))
     
     numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
     numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic

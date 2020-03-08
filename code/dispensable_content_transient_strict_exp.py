@@ -6,14 +6,15 @@ import os
 import pickle
 import numpy as np
 from pathlib import Path
-from text_tools import read_list_table
+from text_tools import read_list_table, write_list_table
 from perturbation_tools import (unique_perturbation_mutations,
-                                num_transient_perturbed_ppis,
-                                num_permanent_perturbed_ppis)
+                                num_permanent_ppis_perturbed,
+                                num_transient_ppis_perturbed)
 from protein_function import (produce_illumina_expr_dict,
                               produce_gtex_expr_dict,
                               produce_hpa_expr_dict,
-                              produce_fantom5_expr_dict)
+                              produce_fantom5_expr_dict,
+                              is_transient)
 from math_tools import fitness_effect
 from plot_tools import curve_plot
 
@@ -28,7 +29,7 @@ def main():
     
     # tissue expression database name
     # options: Illumina, GTEx, HPA, Fantom5
-    expr_db = 'Illumina'
+    expr_db = 'Fantom5'
     
     # minimum number of tissue expression values required for protein pair tissue
     # co-expression to be considered
@@ -91,8 +92,12 @@ def main():
     
     # output data files
     proteinExprFile = procDir / ('protein_expr_%s.pkl' % expr_db)
+    natMutOutFile = interactomeDir / ('nondisease_mutation_transient_perturbs_%s.txt' % expr_db)
+    disMutOutFile = interactomeDir / ('disease_mutation_transient_perturbs_%s.txt' % expr_db)
     
     # create output directories if not existing
+    if not interactomeDir.exists():
+        os.makedirs(interactomeDir)
     if not figDir.exists():
         os.makedirs(figDir)
     
@@ -164,43 +169,68 @@ def main():
     with open(uniprotIDmapFile, 'rb') as f:
         uniprotID = pickle.load(f)
     
-    naturalMutations ["num_transient_perturbed_ppis"] = naturalMutations.apply(
-        lambda x: num_transient_perturbed_ppis (uniprotID [x["Entrez_Gene_ID"]]
-                                                if x["Entrez_Gene_ID"] in uniprotID else '-',
-                                                [(uniprotID [p] if p in uniprotID else '-') 
-                                                for p in x["partners"]],
-                                                x["perturbations"],
-                                                expr,
-                                                minTissues = minTissues,
-                                                maxCoexpr = maxCoexpr), axis=1)
-    diseaseMutations ["num_transient_perturbed_ppis"] = diseaseMutations.apply(
-        lambda x: num_transient_perturbed_ppis (uniprotID [x["Entrez_Gene_ID"]]
-                                                if x["Entrez_Gene_ID"] in uniprotID else '-',
-                                                [(uniprotID [p] if p in uniprotID else '-') 
-                                                for p in x["partners"]],
-                                                x["perturbations"],
-                                                expr,
-                                                minTissues = minTissues,
-                                                maxCoexpr = maxCoexpr), axis=1)
-    naturalMutations ["num_permanent_perturbed_ppis"] = naturalMutations.apply(
-        lambda x: num_permanent_perturbed_ppis (uniprotID [x["Entrez_Gene_ID"]]
-                                                if x["Entrez_Gene_ID"] in uniprotID else '-',
-                                                [(uniprotID [p] if p in uniprotID else '-') 
-                                                for p in x["partners"]],
-                                                x["perturbations"],
-                                                expr,
-                                                minTissues = minTissues,
-                                                minCoexpr = maxCoexpr), axis=1)
-    diseaseMutations ["num_permanent_perturbed_ppis"] = diseaseMutations.apply(
-        lambda x: num_permanent_perturbed_ppis (uniprotID [x["Entrez_Gene_ID"]]
-                                                if x["Entrez_Gene_ID"] in uniprotID else '-',
-                                                [(uniprotID [p] if p in uniprotID else '-') 
-                                                for p in x["partners"]],
-                                                x["perturbations"],
-                                                expr,
-                                                minTissues = minTissues,
-                                                minCoexpr = maxCoexpr), axis=1)
-
+    naturalMutations ["transient_PPIs"] = naturalMutations.apply(
+        lambda x: [is_transient (uniprotID [x["Entrez_Gene_ID"]] if x["Entrez_Gene_ID"] in uniprotID else '-',
+                                 uniprotID [p] if p in uniprotID else '-',
+                                 expr,
+                                 minTissues = minTissues,
+                                 maxCoexpr = maxCoexpr) for p in x["partners"]], axis=1)
+    diseaseMutations ["transient_PPIs"] = diseaseMutations.apply(
+        lambda x: [is_transient (uniprotID [x["Entrez_Gene_ID"]] if x["Entrez_Gene_ID"] in uniprotID else '-',
+                                 uniprotID [p] if p in uniprotID else '-',
+                                 expr,
+                                 minTissues = minTissues,
+                                 maxCoexpr = maxCoexpr) for p in x["partners"]], axis=1)
+    
+    write_list_table (naturalMutations, ["partners", "perturbations", "transient_PPIs"], natMutOutFile)
+    write_list_table (diseaseMutations, ["partners", "perturbations", "transient_PPIs"], disMutOutFile)
+    
+    natMut_numPermPerturbs = naturalMutations.apply(
+        lambda x: num_permanent_ppis_perturbed (x["perturbations"], x["transient_PPIs"]), axis=1)
+    disMut_numPermPerturbs = diseaseMutations.apply(
+        lambda x: num_permanent_ppis_perturbed (x["perturbations"], x["transient_PPIs"]), axis=1)
+    natMut_numTransPerturbs = naturalMutations.apply(
+        lambda x: num_transient_ppis_perturbed (x["perturbations"], x["transient_PPIs"]), axis=1)
+    disMut_numTransPerturbs = diseaseMutations.apply(
+        lambda x: num_transient_ppis_perturbed (x["perturbations"], x["transient_PPIs"]), axis=1)
+    
+#     naturalMutations ["num_transient_perturbed_ppis"] = naturalMutations.apply(
+#         lambda x: num_transient_perturbed_ppis (uniprotID [x["Entrez_Gene_ID"]]
+#                                                 if x["Entrez_Gene_ID"] in uniprotID else '-',
+#                                                 [(uniprotID [p] if p in uniprotID else '-') 
+#                                                 for p in x["partners"]],
+#                                                 x["perturbations"],
+#                                                 expr,
+#                                                 minTissues = minTissues,
+#                                                 maxCoexpr = maxCoexpr), axis=1)
+#     diseaseMutations ["num_transient_perturbed_ppis"] = diseaseMutations.apply(
+#         lambda x: num_transient_perturbed_ppis (uniprotID [x["Entrez_Gene_ID"]]
+#                                                 if x["Entrez_Gene_ID"] in uniprotID else '-',
+#                                                 [(uniprotID [p] if p in uniprotID else '-') 
+#                                                 for p in x["partners"]],
+#                                                 x["perturbations"],
+#                                                 expr,
+#                                                 minTissues = minTissues,
+#                                                 maxCoexpr = maxCoexpr), axis=1)
+#     naturalMutations ["num_permanent_perturbed_ppis"] = naturalMutations.apply(
+#         lambda x: num_permanent_perturbed_ppis (uniprotID [x["Entrez_Gene_ID"]]
+#                                                 if x["Entrez_Gene_ID"] in uniprotID else '-',
+#                                                 [(uniprotID [p] if p in uniprotID else '-') 
+#                                                 for p in x["partners"]],
+#                                                 x["perturbations"],
+#                                                 expr,
+#                                                 minTissues = minTissues,
+#                                                 minCoexpr = maxCoexpr), axis=1)
+#     diseaseMutations ["num_permanent_perturbed_ppis"] = diseaseMutations.apply(
+#         lambda x: num_permanent_perturbed_ppis (uniprotID [x["Entrez_Gene_ID"]]
+#                                                 if x["Entrez_Gene_ID"] in uniprotID else '-',
+#                                                 [(uniprotID [p] if p in uniprotID else '-') 
+#                                                 for p in x["partners"]],
+#                                                 x["perturbations"],
+#                                                 expr,
+#                                                 minTissues = minTissues,
+#                                                 minCoexpr = maxCoexpr), axis=1)
+    
     #------------------------------------------------------------------------------------
     # Dispensable content among all PPIs
     #------------------------------------------------------------------------------------
@@ -240,9 +270,9 @@ def main():
     #------------------------------------------------------------------------------------
     
     numNaturalMut_edgetic = sum((naturalMutations["Edgotype_class"] == 'Edgetic') & 
-                                (naturalMutations["num_permanent_perturbed_ppis"] > 0))
+                                (natMut_numPermPerturbs > 0))
     numDiseaseMut_edgetic = sum((diseaseMutations["Edgotype_class"] == 'Edgetic') & 
-                                (diseaseMutations["num_permanent_perturbed_ppis"] > 0))
+                                (disMut_numPermPerturbs > 0))
     
     numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
     numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic
@@ -276,11 +306,11 @@ def main():
     #------------------------------------------------------------------------------------
     
     numNaturalMut_edgetic = sum((naturalMutations["Edgotype_class"] == 'Edgetic') & 
-                                (naturalMutations["num_transient_perturbed_ppis"] > 0) &
-                                (naturalMutations["num_permanent_perturbed_ppis"] == 0))
+                                (natMut_numPermPerturbs == 0) &
+                                (natMut_numTransPerturbs > 0))
     numDiseaseMut_edgetic = sum((diseaseMutations["Edgotype_class"] == 'Edgetic') & 
-                                (diseaseMutations["num_transient_perturbed_ppis"] > 0) &
-                                (diseaseMutations["num_permanent_perturbed_ppis"] == 0))
+                                (disMut_numPermPerturbs == 0) &
+                                (disMut_numTransPerturbs > 0))
     
     numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
     numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic

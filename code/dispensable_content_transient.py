@@ -145,11 +145,6 @@ def main():
                                         ["partners", "perturbations"],
                                         [str, float])
     
-    naturalMutations = naturalMutations [(naturalMutations["edgotype"] == 'edgetic') |
-                                         (naturalMutations["edgotype"] == 'non-edgetic')].reset_index(drop=True)
-    diseaseMutations = diseaseMutations [(diseaseMutations["edgotype"] == 'edgetic') |
-                                         (diseaseMutations["edgotype"] == 'non-edgetic')].reset_index(drop=True)
-    
     naturalMutations ["num_transient_perturbed_ppis"] = naturalMutations.apply(lambda x:
                                                         num_transient_perturbed_ppis (x["protein"],
                                                                                       x["partners"],

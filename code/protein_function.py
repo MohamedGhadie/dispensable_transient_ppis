@@ -454,10 +454,8 @@ def produce_fantom5_expr_dict (inPath,
 
 def is_transient (p1, p2, expr, minTissues = 3, maxCoexpr = 0.05):
     
-    cox = coexpr (p1, p2, expr, minTissues = minTissues)
-    return cox < maxCoexpr if not np.isnan(cox) else None
-
-def is_permanent (p1, p2, expr, minTissues = 3, minCoexpr = 0.05):
-    
-    cox = coexpr (p1, p2, expr, minTissues = minTissues)
-    return cox >= minCoexpr if not np.isnan(cox) else None
+    cx = coexpr (p1, p2, expr, minTissues = minTissues)
+    if not np.isnan(cx):
+        return 'transient' if cx < maxCoexpr else 'permanent'
+    else:
+        return '-'

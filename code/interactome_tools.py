@@ -419,6 +419,18 @@ def num_partners (interactome, colnames = None):
         partners[p2].add(p1)
     return {p:len(pr) for p, pr in partners.items()}
 
+def is_hub_ppi (p1, p2, degree, hubDegree = 20):
+    
+    hub1 = degree[p1] >= hubDegree if p1 in degree else None
+    hub2 = degree[p2] >= hubDegree if p2 in degree else None
+    
+    if hub1 or hub2:
+        return 'hub PPI'
+    elif (hub1 is None) or (hub2 is None):
+        return '-'
+    else:
+        return 'non-hub PPI'
+
 def num_sites (interactome):
     
     sites = {p:set() for p in set(interactome[["Protein_1", "Protein_2"]].values.flatten())}
