@@ -95,6 +95,14 @@ def perturbed_ppis_max_num_mutExcl (protein, partners, perturbations, simultaneo
     else:
         return np.nan
 
+def num_perturbed_ppis_n_mutExcl (perturbs, numMutExcl, minN = 1, maxN = np.inf):
+    
+    return sum([minN <= n <= maxN for p, n in zip(perturbs, numMutExcl) if p > 0])
+
+def num_perturbed_ppis_n_simult (perturbs, numSimult, minN = 1, maxN = np.inf):
+    
+    return sum([minN <= n <= maxN for p, n in zip(perturbs, numSimult) if p > 0])
+
 def perturbed_ppis_num_mutExcl (protein, partners, perturbations, simultaneous):
     
     num = num_mutExcl (protein, partners, simultaneous)

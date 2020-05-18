@@ -11,6 +11,7 @@ from interactome_tools import num_partners, is_hub_ppi
 from perturbation_tools import (unique_perturbation_mutations,
                                 num_nonhub_ppis_perturbed,
                                 num_hub_ppis_perturbed)
+from stat_tools import sderror_on_fraction, fisher_test
 from math_tools import fitness_effect
 from plot_tools import multi_histogram_plot, curve_plot
 
@@ -43,6 +44,10 @@ def main():
     
     # Probability for strongly detrimental mutations (S) to be edgetic (E)
     pE_S = 0
+    
+    pN_E_keys = ['Non-hubs', 'Hubs']
+    
+    pN_E, conf = {}, {}
     
     # show figures
     showFigs = False
@@ -195,18 +200,7 @@ def main():
                                                     num_hub_ppis_perturbed (x["perturbations"],
                                                                             x["hub_interactions"]), 
                                                                             axis=1)
-    
-#     naturalMutations ["perturbed_partner_max_degree"] = naturalMutations.apply(lambda x:
-#                                                         perturbed_partner_max_degree (x["Entrez_Gene_ID"],
-#                                                                                       x["partners"],
-#                                                                                       x["perturbations"],
-#                                                                                       numPartners), axis=1)
-#     diseaseMutations ["perturbed_partner_max_degree"] = diseaseMutations.apply(lambda x:
-#                                                         perturbed_partner_max_degree (x["Entrez_Gene_ID"],
-#                                                                                       x["partners"],
-#                                                                                       x["perturbations"],
-#                                                                                       numPartners), axis=1)
-    
+        
     #------------------------------------------------------------------------------------
     # dispensable content among all PPIs
     #------------------------------------------------------------------------------------
@@ -220,6 +214,27 @@ def main():
     numNaturalMut_considered = numNaturalMut_edgetic + numNaturalMut_nonedgetic
     numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
     
+    print('\n********************************************************************')
+    print('Dispensable content among all PPIs:')
+    print('********************************************************************\n')
+    
+    print('Fraction of predicted edgetic mutations:')
+    print('Non-disease mutations: %.3f (SE = %g, %d out of %d)' 
+            % (numNaturalMut_edgetic / numNaturalMut_considered,
+               sderror_on_fraction (numNaturalMut_edgetic, numNaturalMut_considered),
+               numNaturalMut_edgetic,
+               numNaturalMut_considered))
+    
+    print('Disease mutations: %.3f (SE = %g, %d out of %d)' 
+            % (numDiseaseMut_edgetic / numDiseaseMut_considered,
+               sderror_on_fraction (numDiseaseMut_edgetic, numDiseaseMut_considered),
+               numDiseaseMut_edgetic,
+               numDiseaseMut_considered))
+    
+    fisher_test ([numNaturalMut_edgetic, numNaturalMut_nonedgetic],
+                 [numDiseaseMut_edgetic, numDiseaseMut_nonedgetic])
+    
+    print()
     all_effects = fitness_effect (pN,
                                   pM,
                                   pS,
@@ -231,11 +246,6 @@ def main():
                                   edgotype = 'edgetic',
                                   CI = 95 if computeConfidenceIntervals else None,
                                   output = True)
-    
-    pN_E_all = 100 * all_effects['P(N|E)']
-    if 'P(N|E)_CI' in all_effects:
-        lower, upper = all_effects['P(N|E)_CI']
-        conf_all = 100 * lower, 100 * upper
     
     #------------------------------------------------------------------------------------
     # dispensable content among non-hub PPIs
@@ -252,6 +262,27 @@ def main():
     numNaturalMut_considered = numNaturalMut_edgetic + numNaturalMut_nonedgetic
     numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
     
+    print('\n********************************************************************')
+    print('Dispensable content among non-hub PPIs:')
+    print('********************************************************************\n')
+    
+    print('Fraction of predicted edgetic mutations:')
+    print('Non-disease mutations: %.3f (SE = %g, %d out of %d)' 
+            % (numNaturalMut_edgetic / numNaturalMut_considered,
+               sderror_on_fraction (numNaturalMut_edgetic, numNaturalMut_considered),
+               numNaturalMut_edgetic,
+               numNaturalMut_considered))
+    
+    print('Disease mutations: %.3f (SE = %g, %d out of %d)' 
+            % (numDiseaseMut_edgetic / numDiseaseMut_considered,
+               sderror_on_fraction (numDiseaseMut_edgetic, numDiseaseMut_considered),
+               numDiseaseMut_edgetic,
+               numDiseaseMut_considered))
+    
+    fisher_test ([numNaturalMut_edgetic, numNaturalMut_nonedgetic],
+                 [numDiseaseMut_edgetic, numDiseaseMut_nonedgetic])
+    
+    print()
     all_effects = fitness_effect (pN,
                                   pM,
                                   pS,
@@ -264,10 +295,11 @@ def main():
                                   CI = 95 if computeConfidenceIntervals else None,
                                   output = True)
     
-    pN_E_nonhub = 100 * all_effects['P(N|E)']
-    if 'P(N|E)_CI' in all_effects:
-        lower, upper = all_effects['P(N|E)_CI']
-        conf_nohub = 100 * lower, 100 * upper
+    if 'P(N|E)' in all_effects:
+        pN_E['Non-hubs'] = 100 * all_effects['P(N|E)']
+        if 'P(N|E)_CI' in all_effects:
+            lower, upper = all_effects['P(N|E)_CI']
+            conf['Non-hubs'] = 100 * lower, 100 * upper
     
     #------------------------------------------------------------------------------------
     # dispensable content among hub PPIs
@@ -286,6 +318,27 @@ def main():
     numNaturalMut_considered = numNaturalMut_edgetic + numNaturalMut_nonedgetic
     numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
     
+    print('\n********************************************************************')
+    print('Dispensable content among hub PPIs:')
+    print('********************************************************************\n')
+    
+    print('Fraction of predicted edgetic mutations:')
+    print('Non-disease mutations: %.3f (SE = %g, %d out of %d)' 
+            % (numNaturalMut_edgetic / numNaturalMut_considered,
+               sderror_on_fraction (numNaturalMut_edgetic, numNaturalMut_considered),
+               numNaturalMut_edgetic,
+               numNaturalMut_considered))
+    
+    print('Disease mutations: %.3f (SE = %g, %d out of %d)' 
+            % (numDiseaseMut_edgetic / numDiseaseMut_considered,
+               sderror_on_fraction (numDiseaseMut_edgetic, numDiseaseMut_considered),
+               numDiseaseMut_edgetic,
+               numDiseaseMut_considered))
+    
+    fisher_test ([numNaturalMut_edgetic, numNaturalMut_nonedgetic],
+                 [numDiseaseMut_edgetic, numDiseaseMut_nonedgetic])
+    
+    print()
     all_effects = fitness_effect (pN,
                                   pM,
                                   pS,
@@ -298,41 +351,41 @@ def main():
                                   CI = 95 if computeConfidenceIntervals else None,
                                   output = True)
     
-    pN_E_hub = 100 * all_effects['P(N|E)']
-    if 'P(N|E)_CI' in all_effects:
-        lower, upper = all_effects['P(N|E)_CI']
-        conf_hub = 100 * lower, 100 * upper
+    if 'P(N|E)' in all_effects:
+        pN_E['Hubs'] = 100 * all_effects['P(N|E)']
+        if 'P(N|E)_CI' in all_effects:
+            lower, upper = all_effects['P(N|E)_CI']
+            conf['Hubs'] = 100 * lower, 100 * upper
         
     #------------------------------------------------------------------------------------
     # Plot dispensable PPI content
     #------------------------------------------------------------------------------------
     
-    numGroups = 3
     if computeConfidenceIntervals:
-        maxY = max([pN_E_all + conf_all[1], pN_E_hub + conf_hub[1], pN_E_nonhub + conf_nohub[1]])
+        maxY = max([pN_E[p] + conf[p][1] for p in pN_E.keys()])
     else:
-        maxY = max([pN_E_all, pN_E_hub, pN_E_nonhub])
+        maxY = max(pN_E.values())
     maxY = 10 * np.ceil(maxY / 10)
     maxY = 40
     
-    curve_plot ([pN_E_all, pN_E_nonhub, pN_E_hub],
-                error = [conf_all, conf_nohub, conf_hub] if computeConfidenceIntervals else None,
-                xlim = [0.8, numGroups + 0.1],
+    curve_plot ([pN_E[p] for p in pN_E_keys if p in pN_E],
+                error = [conf[p] for p in pN_E_keys if p in pN_E] if computeConfidenceIntervals else None,
+                xlim = [0.8, 3.1],
                 ylim = [0, maxY],
                 styles = '.k',
                 capsize = 10 if computeConfidenceIntervals else 0,
-                msize = 16,
-                ewidth = 1.25,
+                msize = 26,
+                ewidth = 2,
                 ecolors = 'k',
                 ylabel = 'Fraction of dispensable PPIs (%)',
                 yMinorTicks = 4,
-                xticks = list(np.arange(1, numGroups + 1)),
-                xticklabels = ["All PPIs", "Non-hub PPIs", "Hub PPIs"],
+                xticks = [1, 2],
+                xticklabels = [p for p in pN_E_keys if p in pN_E],
                 yticklabels = list(np.arange(0, maxY + 10, 10)),
                 fontsize = 20,
                 adjustBottom = 0.2,
                 shiftBottomAxis = -0.1,
-                xbounds = (1, numGroups),
+                xbounds = (1, 2),
                 show = showFigs,
                 figdir = figDir,
                 figname = 'Fraction_disp_PPIs_hubs')

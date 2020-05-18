@@ -145,6 +145,20 @@ def main():
                                         ["partners", "perturbations"],
                                         [str, float])
     
+    #------------------------------------------------------------------------------------
+    # Remove mutations with no unique PPI perturbation
+    #------------------------------------------------------------------------------------
+    
+    if unique_edgetics:
+        naturalMutations = naturalMutations [unique_perturbation_mutations (naturalMutations)].reset_index(drop=True)
+        diseaseMutations = diseaseMutations [unique_perturbation_mutations (diseaseMutations)].reset_index(drop=True)
+    
+    print()
+    print('%d non-disease mutations' % len(naturalMutations))
+    print('%d disease mutations' % len(diseaseMutations))
+    
+    #------------------------------------------------------------------------------------
+    
     naturalMutations ["num_transient_perturbed_ppis"] = naturalMutations.apply(lambda x:
                                                         num_transient_perturbed_ppis (x["protein"],
                                                                                       x["partners"],
@@ -159,15 +173,7 @@ def main():
                                                                                       expr,
                                                                                       minTissues = minTissues,
                                                                                       maxCoexpr = maxCoexpr), axis=1)
-    
-    #------------------------------------------------------------------------------------
-    # Remove mutations with no unique PPI perturbation
-    #------------------------------------------------------------------------------------
-    
-    if unique_edgetics:
-        naturalMutations = naturalMutations [unique_perturbation_mutations (naturalMutations)].reset_index(drop=True)
-        diseaseMutations = diseaseMutations [unique_perturbation_mutations (diseaseMutations)].reset_index(drop=True)
-    
+        
     #------------------------------------------------------------------------------------
     # Dispensable content among all PPIs
     #------------------------------------------------------------------------------------
@@ -297,8 +303,7 @@ def main():
     # Plot dispensable PPI content
     #------------------------------------------------------------------------------------
     
-    numGroups = len(pN_E.keys())
-    numGroups = 3
+    numGroups = len(pN_E_keys)
     if computeConfidenceIntervals:
         maxY = max([pN_E[p] + conf[p][1] for p in pN_E.keys()])
     else:

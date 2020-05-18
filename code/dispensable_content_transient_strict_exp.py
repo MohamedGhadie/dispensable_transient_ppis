@@ -15,6 +15,7 @@ from protein_function import (produce_illumina_expr_dict,
                               produce_hpa_expr_dict,
                               produce_fantom5_expr_dict,
                               is_transient)
+from stat_tools import fisher_test, sderror_on_fraction
 from math_tools import fitness_effect
 from plot_tools import curve_plot
 
@@ -56,7 +57,7 @@ def main():
     # Probability for strongly detrimental mutations (S) to be edgetic (E)
     pE_S = 0
     
-    pN_E_keys = ['All PPIs', 'Permanent PPIs', 'Transient PPIs']
+    pN_E_keys = ['Permanent PPIs', 'Transient PPIs']
     
     pN_E, conf = {}, {}
     
@@ -76,7 +77,7 @@ def main():
     interactomeDir = procDir / interactome_name
     
     # figure directory
-    figDir = Path('../figures') / interactome_name / 'strict'
+    figDir = Path('../figures') / interactome_name
     
     # input data files
     illuminaExprFile = extDir / 'E-MTAB-513.tsv.txt'
@@ -166,6 +167,7 @@ def main():
     #------------------------------------------------------------------------------------
     # Identify perturbation partner max degree
     #------------------------------------------------------------------------------------
+    
     with open(uniprotIDmapFile, 'rb') as f:
         uniprotID = pickle.load(f)
     
@@ -244,9 +246,27 @@ def main():
     numNaturalMut_considered = numNaturalMut_edgetic + numNaturalMut_nonedgetic
     numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
     
-    print()
-    print('Fitness effect for disruption among all PPIs:')
+    print('\n********************************************************************')
+    print('Dispensable content among all PPIs:')
+    print('********************************************************************\n')
     
+    print('Fraction of predicted edgetic mutations:')
+    print('Non-disease mutations: %.3f (SE = %g, %d out of %d)' 
+            % (numNaturalMut_edgetic / numNaturalMut_considered,
+               sderror_on_fraction (numNaturalMut_edgetic, numNaturalMut_considered),
+               numNaturalMut_edgetic,
+               numNaturalMut_considered))
+    
+    print('Disease mutations: %.3f (SE = %g, %d out of %d)' 
+            % (numDiseaseMut_edgetic / numDiseaseMut_considered,
+               sderror_on_fraction (numDiseaseMut_edgetic, numDiseaseMut_considered),
+               numDiseaseMut_edgetic,
+               numDiseaseMut_considered))
+    
+    fisher_test ([numNaturalMut_edgetic, numNaturalMut_nonedgetic],
+                 [numDiseaseMut_edgetic, numDiseaseMut_nonedgetic])
+    
+    print()
     all_effects = fitness_effect (pN,
                                   pM,
                                   pS,
@@ -258,12 +278,6 @@ def main():
                                   edgotype = 'edgetic',
                                   CI = 95 if computeConfidenceIntervals else None,
                                   output = True)
-    
-    if 'P(N|E)' in all_effects:
-        pN_E[pN_E_keys[0]] = 100 * all_effects['P(N|E)']
-        if 'P(N|E)_CI' in all_effects:
-            lower, upper = all_effects['P(N|E)_CI']
-            conf[pN_E_keys[0]] = 100 * lower, 100 * upper
     
     #------------------------------------------------------------------------------------
     # Dispensable content among permanent PPIs
@@ -280,9 +294,27 @@ def main():
     numNaturalMut_considered = numNaturalMut_edgetic + numNaturalMut_nonedgetic
     numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
     
-    print()
-    print('Fitness effect for disruption of permanent PPIs:')
+    print('\n********************************************************************')
+    print('Dispensable content among permanent PPIs:')
+    print('********************************************************************\n')
     
+    print('Fraction of predicted edgetic mutations:')
+    print('Non-disease mutations: %.3f (SE = %g, %d out of %d)' 
+            % (numNaturalMut_edgetic / numNaturalMut_considered,
+               sderror_on_fraction (numNaturalMut_edgetic, numNaturalMut_considered),
+               numNaturalMut_edgetic,
+               numNaturalMut_considered))
+    
+    print('Disease mutations: %.3f (SE = %g, %d out of %d)' 
+            % (numDiseaseMut_edgetic / numDiseaseMut_considered,
+               sderror_on_fraction (numDiseaseMut_edgetic, numDiseaseMut_considered),
+               numDiseaseMut_edgetic,
+               numDiseaseMut_considered))
+    
+    fisher_test ([numNaturalMut_edgetic, numNaturalMut_nonedgetic],
+                 [numDiseaseMut_edgetic, numDiseaseMut_nonedgetic])
+    
+    print()
     all_effects = fitness_effect (pN,
                                   pM,
                                   pS,
@@ -296,10 +328,10 @@ def main():
                                   output = True)
     
     if 'P(N|E)' in all_effects:
-        pN_E[pN_E_keys[1]] = 100 * all_effects['P(N|E)']
+        pN_E['Permanent PPIs'] = 100 * all_effects['P(N|E)']
         if 'P(N|E)_CI' in all_effects:
             lower, upper = all_effects['P(N|E)_CI']
-            conf[pN_E_keys[1]] = 100 * lower, 100 * upper
+            conf['Permanent PPIs'] = 100 * lower, 100 * upper
     
     #------------------------------------------------------------------------------------
     # Dispensable content among transient PPIs
@@ -318,12 +350,27 @@ def main():
     numNaturalMut_considered = numNaturalMut_edgetic + numNaturalMut_nonedgetic
     numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
     
+    print('\n********************************************************************')
+    print('Dispensable content among transient PPIs:')
+    print('********************************************************************\n')
+    
+    print('Fraction of predicted edgetic mutations:')
+    print('Non-disease mutations: %.3f (SE = %g, %d out of %d)' 
+            % (numNaturalMut_edgetic / numNaturalMut_considered,
+               sderror_on_fraction (numNaturalMut_edgetic, numNaturalMut_considered),
+               numNaturalMut_edgetic,
+               numNaturalMut_considered))
+    
+    print('Disease mutations: %.3f (SE = %g, %d out of %d)' 
+            % (numDiseaseMut_edgetic / numDiseaseMut_considered,
+               sderror_on_fraction (numDiseaseMut_edgetic, numDiseaseMut_considered),
+               numDiseaseMut_edgetic,
+               numDiseaseMut_considered))
+    
+    fisher_test ([numNaturalMut_edgetic, numNaturalMut_nonedgetic],
+                 [numDiseaseMut_edgetic, numDiseaseMut_nonedgetic])
+    
     print()
-    print('Fitness effect for disruption of transient PPIs:')
-    print(numNaturalMut_edgetic)
-    print(numNaturalMut_considered)
-    print(numDiseaseMut_edgetic)
-    print(numDiseaseMut_considered)
     all_effects = fitness_effect (pN,
                                   pM,
                                   pS,
@@ -337,40 +384,40 @@ def main():
                                   output = True)
     
     if 'P(N|E)' in all_effects:
-        pN_E[pN_E_keys[2]] = 100 * all_effects['P(N|E)']
+        pN_E['Transient PPIs'] = 100 * all_effects['P(N|E)']
         if 'P(N|E)_CI' in all_effects:
             lower, upper = all_effects['P(N|E)_CI']
-            conf[pN_E_keys[2]] = 100 * lower, 100 * upper
+            conf['Transient PPIs'] = 100 * lower, 100 * upper
     
     #------------------------------------------------------------------------------------
     # Plot dispensable PPI content
     #------------------------------------------------------------------------------------
     
-    numGroups = len(pN_E_keys)
     if computeConfidenceIntervals:
         maxY = max([pN_E[p] + conf[p][1] for p in pN_E.keys()])
     else:
         maxY = max(pN_E.values())
     maxY = 10 * np.ceil(maxY / 10)
+    maxY = 40
     
-    curve_plot ([(pN_E[p] if p in pN_E else np.nan) for p in pN_E_keys],
-                error = [(conf[p] if p in pN_E else [np.nan, np.nan]) for p in pN_E_keys] if computeConfidenceIntervals else None,
-                xlim = [0.8, numGroups + 0.1],
+    curve_plot ([pN_E[p] for p in pN_E_keys if p in pN_E],
+                error = [conf[p] for p in pN_E_keys if p in pN_E] if computeConfidenceIntervals else None,
+                xlim = [0.8, 3.1],
                 ylim = [0, maxY],
                 styles = '.k',
                 capsize = 10 if computeConfidenceIntervals else 0,
-                msize = 16,
-                ewidth = 1.25,
+                msize = 26,
+                ewidth = 2,
                 ecolors = 'k',
                 ylabel = 'Fraction of dispensable PPIs (%)',
                 yMinorTicks = 4,
-                xticks = list(np.arange(1, numGroups + 1)),
-                xticklabels = pN_E_keys,
+                xticks = [1, 2],
+                xticklabels = [p.replace(' ', '\n') for p in pN_E_keys if p in pN_E],
                 yticklabels = list(np.arange(0, maxY + 10, 10)),
-                fontsize = 18,
+                fontsize = 20,
                 adjustBottom = 0.2,
                 shiftBottomAxis = -0.1,
-                xbounds = (1, numGroups),
+                xbounds = (1, 2),
                 show = showFigs,
                 figdir = figDir,
                 figname = 'Fraction_disp_PPIs_transient_%s' % expr_db)

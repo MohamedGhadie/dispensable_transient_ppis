@@ -23,7 +23,7 @@ def main():
     
     # reference interactome name
     # options: HI-II-14, IntAct
-    interactome_name = 'HI-II-14'
+    interactome_name = 'HuRI'
     
     # set to True to calculate dispensable PPI content using fraction of mono-edgetic mutations 
     # instead of all edgetic mutations
@@ -158,7 +158,7 @@ def main():
     # Fraction of predicted edgetic mutations
     #------------------------------------------------------------------------------------
     
-    degRange = [2] + list(np.arange(10, 101, 10))
+    degRange = [5] + list(np.arange(10, 101, 10))
     pN_E_high_degree, pN_E_high, conf_high = [], [], []
     for minDegree in degRange:
         if mono_edgetic:

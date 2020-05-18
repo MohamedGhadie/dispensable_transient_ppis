@@ -2,6 +2,7 @@
 # Modules for processing interactomes.
 #----------------------------------------------------------------------------------------
 
+import sys
 import pickle
 import pandas as pd
 import numpy as np
@@ -68,15 +69,17 @@ def write_interactome_sequences (inPath, sequenceFile, outPath):
         outPath(Path): path to write protein sequences to.
 
     """
-    interactome = pd.read_table(inPath, sep='\t')
-    sequences = pd.read_table(sequenceFile, sep='\t')
+    interactome = pd.read_table (inPath, sep='\t')
+    allsequences = pd.read_table (sequenceFile, sep='\t')
+    
     proteins = list(set(interactome[["Protein_1", "Protein_2"]].values.flatten()))
-    interactomeSequences = pd.DataFrame(index=range(len(proteins)),
-                                        columns=['ID', 'Sequence'])
-    interactomeSequences["ID"] = proteins
-    interactomeSequences["Sequence"] = interactomeSequences["ID"].apply(lambda x:
-                                                                        sequences.loc[sequences["ID"]==x,
-                                                                                      "Sequence"].item())
+    seqProteins, sequences = [], []
+    for p in proteins:
+        seq = allsequences.loc[allsequences["ID"]==p, "Sequence"]
+        if not seq.empty:
+            seqProteins.append(p)
+            sequences.append(seq.values[0])
+    interactomeSequences = pd.DataFrame(data = {"ID":seqProteins, "Sequence":sequences})
     write_fasta_file (interactomeSequences, "ID", "Sequence", outPath)
 
 def write_chain_annotated_interactome_to_excel (interactome,
@@ -285,17 +288,6 @@ def read_interface_annotated_interactome (inPath, delm = None):
         interactome["Chain_pairs"] = interactome["Chain_pairs"].apply(lambda x: str_to_list(x, delm[:-1], str))
     return interactome
 
-def get_interface (interactome, p1, p2):
-    
-    ppi = interactome.loc[((interactome["Protein_1"] == p1) & (interactome["Protein_2"] == p2)) |
-                          ((interactome["Protein_1"] == p2) & (interactome["Protein_2"] == p1))]
-    if not ppi.empty:
-        protein_1, protein_2, interface = ppi[["Protein_1", "Protein_2", "Interfaces"]].values[0]
-    if protein_1 == p1:
-        return interface
-    else:
-        return tuple(reversed(interface))
-
 def create_ppi_graph (inPath):
     """Create a networkx graph from an interactome.
 
@@ -440,22 +432,99 @@ def num_sites (interactome):
                 sites[protein].add(site)
     return {p:len(s) for p, s in sites.items()}
 
-def mutExcl_simult_partners (interactome, cutoff = 0):
+def mutExcl_simult_partners (interactome, maxSimultOverlap = 0):
     
-    partners = interaction_partners (interactome)
-    mutExcl = {p:{} for p in partners.keys()}
-    simult = {p:{} for p in partners.keys()}
-    for p in partners.keys():
-        mutExcl[p] = {pr:set() for pr in partners[p]}
-        simult[p] = {pr:set() for pr in partners[p]}
-        interface = {}
-        for pr in partners[p]:
-            interface[pr], _ = get_interface (interactome, p, pr)
-        for pr in partners[p]:
-            for pr2 in partners[p] - {pr}:
-                overlap, _ = sequence_overlap (interface[pr], interface[pr2])
-                if overlap > cutoff:
+    allpartners = interaction_partners (interactome)
+    interfaces = get_allprotein_interfaces (allpartners, interactome)
+    mutExcl = {p:{} for p in allpartners.keys()}
+    simult = {p:{} for p in allpartners.keys()}
+    n = len(allpartners.keys())
+    print('Counting mutually exclusive and simultaneous partners:')
+    for i, (p, partners) in enumerate(allpartners.items()):
+        sys.stdout.write('  protein %d out of %d (%.2f%%) \r' % (i+1, n, 100*(i+1)/n))
+        sys.stdout.flush()
+        mutExcl[p] = {pr:set() for pr in partners}
+        simult[p] = {pr:set() for pr in partners}
+        #interfaces = get_interfaces (p, partners, interactome)
+        for pr in partners:
+            for pr2 in partners - {pr}:
+                overlap, _ = sequence_overlap (interfaces[p][pr], interfaces[p][pr2])
+                if overlap > maxSimultOverlap:
                     mutExcl[p][pr].add(pr2)
                 else:
                     simult[p][pr].add(pr2)
+    print()
     return mutExcl, simult
+
+def max_num_mutExcl (p1, p2, mutExcl):
+    
+    if (p1 in mutExcl) and (p2 in mutExcl):
+        if (p2 in mutExcl[p1]) and (p1 in mutExcl[p2]):
+            return max(len(mutExcl[p1][p2]), len(mutExcl[p2][p1]))
+    return np.nan
+
+def max_num_simult (p1, p2, simult):
+    
+    if (p1 in simult) and (p2 in simult):
+        if (p2 in simult[p1]) and (p1 in simult[p2]):
+            return max(len(simult[p1][p2]), len(simult[p2][p1]))
+    return np.nan
+
+def single_interface_proteins (interactome, partners, maxOverlap = 0):
+    
+    proteins = list(set(interactome[["Protein_1", "Protein_2"]].values.flatten()))
+    single = {}
+    for p in proteins:
+        single[p] = is_single_interface (p, partners[p], interactome, maxOverlap = maxOverlap)
+    return single
+
+def is_multi_interface (p, partners, interactome, maxOverlap = 0):
+    
+    return not is_single_interface (p, partners, interactome, maxOverlap = maxOverlap)
+
+def is_single_interface (p, partners, interactome, maxOverlap = 0):
+    
+    for i, p1 in enumerate(partners):
+        for p2 in partners[i+1:]:
+            if is_simultaneous (p, p1, p2, interactome, maxOverlap = maxOverlap):
+                return False
+    return True
+
+def is_mutually_exclusive (p, p1, p2, interactome, maxSimultOverlap = 0):
+    
+    return not is_simultaneous (p, p1, p2, interactome, maxOverlap = maxSimultOverlap)
+
+def is_simultaneous (p, p1, p2, interactome, maxOverlap = 0):
+    
+    interface = get_interfaces (p, [p1, p2], interactome)
+    o1, o2 = sequence_overlap (interface[p1], interface[p2])
+    return (o1 <= maxOverlap) and (o2 <= maxOverlap)
+
+def get_allprotein_interfaces (partners, interactome):
+    
+    interfaces = {}
+    n = len(partners.keys())
+    print('Extracting all protein interfaces:')
+    for i, (p, partners) in enumerate(partners.items()):
+        sys.stdout.write('  protein %d out of %d (%.2f%%) \r' % (i+1, n, 100*(i+1)/n))
+        sys.stdout.flush()
+        interfaces[p] = get_interfaces (p, partners, interactome)
+    print()
+    return interfaces
+
+def get_interfaces (p, partners, interactome):
+    
+    return {p2:get_interface (p, p2, interactome)[0] for p2 in partners}
+
+def get_interface (p1, p2, interactome):
+    
+    ppi = interactome.loc[((interactome["Protein_1"] == p1) & (interactome["Protein_2"] == p2)) |
+                          ((interactome["Protein_1"] == p2) & (interactome["Protein_2"] == p1))]
+    if not ppi.empty:
+        protein_1, protein_2, interface = ppi[["Protein_1", "Protein_2", "Interfaces"]].values[0]
+        if protein_1 == p1:
+            return interface
+        else:
+            return tuple(reversed(interface))
+    else:
+        return ([], [])

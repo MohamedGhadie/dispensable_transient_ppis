@@ -55,7 +55,6 @@ def fitness_effect (pN,
         allresults['P(%s)' % T] = pT
     
         if output:
-            print()
             print('Fitness effect calculation for %s (%s) mutations:' % (edgotype, T))
             print('P(N) = %.1f %%' % (100 * pN))
             print('P(M) = %.1f %%' % (100 * pM))
