@@ -31,7 +31,7 @@ from pdb_tools import (allow_pdb_downloads,
                        return_chain_res_posToID,
                        return_chain_res_IDToPos,
                        get_interface_by_chainIDs)
-from ddg_tools import read_protein_mutation_ddg
+from energy_tools import read_protein_mutation_ddg
 
 known_interfaces = {}
 
