@@ -11,6 +11,7 @@ import numpy as np
 import subprocess
 from scipy.stats.stats import pearsonr
 from simple_tools import valid_uniprot_id, is_numeric, hamming_dist
+from geo_tools import read_gds_softfile
 
 def partner_sim (p1, p2, partners):
     """Calculate the fraction of interaction partners shared by two proteins.
@@ -52,14 +53,14 @@ def go_sim (p1, p2, goAssoc):
     else:
         return np.nan
 
-def coexpr (p1, p2, expr, minTissues = 3, method = 'pearson_corr'):
+def coexpr (p1, p2, expr, minPts = 3, method = 'pearson_corr'):
     """Calculate tissue co-expression for two proteins.
 
     Args:
         p1 (str): protein 1 ID.
         p2 (str): protein 2 ID.
         expr (dict): dictionary containing tissue expression values for each protein.
-        minTissues (int): minimum required number of tissues with expression levels 
+        minPts (int): minimum required number of samples with expression levels 
                             defined for both proteins.
         method (str): method used to calculate coexpression. Set to 'pearson_corr' to return 
                         Pearson's correlation coefficient, or 'hamming_dist' to return 
@@ -72,15 +73,15 @@ def coexpr (p1, p2, expr, minTissues = 3, method = 'pearson_corr'):
     if (p1 in expr) and (p2 in expr):
         e1, e2 = expr[p1], expr[p2]
         not_nan = (np.isnan(e1) == False) & (np.isnan(e2) == False)
-        numTissues = sum(not_nan)
-        if numTissues >= minTissues:
+        numPts = sum(not_nan)
+        if numPts >= minPts:
             e1, e2 = e1[not_nan], e2[not_nan]
             if method is 'pearson_corr':
                 if (len(set(e1)) > 1) and (len(set(e2)) > 1):
                     corr, p = pearsonr(e1, e2)
                     return corr
             elif method is 'hamming_dist':
-                return 1 - hamming_dist (e1, e2) / numTissues
+                return 1 - hamming_dist (e1, e2) / numPts
     return np.nan
 
 def produce_protein_go_dictionaries (inPath,
@@ -452,10 +453,74 @@ def produce_fantom5_expr_dict (inPath,
     with open(outPath, 'wb') as fOut:
         pickle.dump(expr, fOut)
 
-def is_transient (p1, p2, expr, minTissues = 3, maxCoexpr = 0.05):
+def produce_geo_expr_dict (inPath,
+                           uniprotIDmapFile,
+                           gdsDir,
+                           outPath,
+                           numPoints = 1):
     
-    cx = coexpr (p1, p2, expr, minTissues = minTissues)
-    if not np.isnan(cx):
-        return 'transient' if cx < maxCoexpr else 'permanent'
+    with open(uniprotIDmapFile, 'rb') as f:
+        uniprotID = pickle.load(f)
+    
+    gdsData = pd.read_table (inPath, sep='\t')
+    gdsData = gdsData [(gdsData["Time_point_count"] >= numPoints) &
+                       (gdsData["Time_measure"] != '-')].reset_index(drop=True)
+    
+    expr, n = {}, len(gdsData)
+    for i, (id, tm) in enumerate(gdsData[["GDS_ID", "Time_measure"]].values):
+        print('*****************************************************')
+        print('Dataset %d out of %d' % (i+1, n))
+        print('*****************************************************')
+        
+        gds = read_gds_softfile (id, inDir = gdsDir)
+        if gds:
+            samples = []
+            for subset in gds.subsets.values():
+                if tm in subset.metadata['type']:
+                    samples.extend(subset.metadata['sample_id'][0].split(','))
+            samples = list(set(samples))
+        
+            genes = list(set(gds.table["IDENTIFIER"].values))
+            for gene in genes:
+                e = gds.table.loc[gds.table["IDENTIFIER"] == gene, samples]
+                g = gene.upper()
+                if g in uniprotID:
+                    p = uniprotID[g]
+                    if p not in expr:
+                        expr[p] = {}
+                    expr[p][id] = e.mean().values if e.shape[0] > 1 else e.iloc[0].values
+    
+    with open(outPath, 'wb') as fOut:
+        pickle.dump(expr, fOut)
+
+def is_transient (p1,
+                  p2,
+                  expr,
+                  minPts = 5,
+                  maxCoexpr = 0.05,
+                  singleExp = True):
+    
+    if singleExp:
+        c = coexpr (p1, p2, expr, minPts = minPts)
+        if not np.isnan(c):
+            return 'transient' if c < maxCoexpr else 'permanent'
+        else:
+            return '-'
     else:
-        return '-'
+        all = []
+        if (p1 in expr) and (p2 in expr):
+            for dataset in expr[p1]:
+                if dataset in expr[p2]:
+                    subExpr = {p1:expr[p1][dataset], p2:expr[p2][dataset]}
+                    all.append(is_transient (p1,
+                                             p2,
+                                             subExpr,
+                                             minPts = minPts,
+                                             maxCoexpr = maxCoexpr,
+                                             singleExp = True))
+        if 'transient' in all:
+            return 'transient'
+        elif 'permanent' in all:
+            return 'permanent'
+        else:
+            return '-'

@@ -14,6 +14,7 @@ from protein_function import (produce_illumina_expr_dict,
                               produce_gtex_expr_dict,
                               produce_hpa_expr_dict,
                               produce_fantom5_expr_dict,
+                              produce_geo_expr_dict,
                               is_transient)
 from stat_tools import fisher_test, sderror_on_fraction
 from math_tools import fitness_effect
@@ -22,7 +23,7 @@ from plot_tools import curve_plot
 def main():
     
     # reference interactome name
-    # options: HI-II-14, IntAct
+    # options: HI-II-14, HuRI, IntAct
     interactome_name = 'IntAct'
     
     # set to True to calculate dispensable PPI content using fraction of mono-edgetic mutations 
@@ -32,16 +33,16 @@ def main():
     # set to True to remove mutations that have no unique PPI perturbation
     unique_edgetics = False
     
-    # tissue expression database name
-    # options: Illumina, GTEx, HPA, Fantom5
-    expr_db = 'Fantom5'
+    # gene expression database name
+    # options: Illumina, GTEx, HPA, Fantom5, GEO
+    expr_db = 'GEO'
     
-    # minimum number of tissue expression values required for protein pair tissue
+    # minimum number of expression point values required for protein pair tissue
     # co-expression to be considered
-    minTissues = 5
+    minPoints = 5
     
     # maximum co-expression level (not inclusive) for transient PPIs
-    maxCoexpr = 0.1
+    maxCoexpr = 0.05
     
     # calculate confidence interval for the fraction of dispensable PPIs
     computeConfidenceIntervals = True
@@ -80,6 +81,9 @@ def main():
     # directory of processed data files specific to interactome
     interactomeDir = procDir / interactome_name
     
+    # directory of GEO dataset files
+    geoDir = extDir / 'GEO' / 'datasets'
+    
     # figure directory
     figDir = Path('../figures') / interactome_name
     
@@ -89,6 +93,7 @@ def main():
     hpaExprFile = extDir / 'normal_tissue.tsv'
     fantomExprFile = extDir / 'hg38_fair+new_CAGE_peaks_phase1and2_tpm_ann.osc.txt'
     fantomSampleTypeFile = extDir / 'fantom5_sample_type.xlsx'
+    gdsTypeFile = procDir / 'gds_subset_type.txt'
     uniprotIDmapFile = procDir / 'to_human_uniprotID_map.pkl'
     uniqueGeneSwissProtIDFile = procDir / 'uniprot_unique_gene_reviewed_human_proteome.list'
     naturalMutationsFile = interactomeDir / 'nondisease_mutation_edgetics.txt'
@@ -133,6 +138,12 @@ def main():
                                        sampleTypes = 'tissues',
                                        sampleTypeFile = fantomSampleTypeFile,
                                        uniprotIDlistFile = uniqueGeneSwissProtIDFile)
+        elif expr_db is 'GEO':
+            produce_geo_expr_dict (gdsTypeFile,
+                                   uniprotIDmapFile,
+                                   geoDir,
+                                   proteinExprFile,
+                                   numPoints = 5)
     
     with open(proteinExprFile, 'rb') as f:
         expr = pickle.load(f)
@@ -177,19 +188,23 @@ def main():
     
     #------------------------------------------------------------------------------------
     
+    singleExp = False if expr_db is 'GEO' else True
+    
     naturalMutations ["transient_PPIs"] = naturalMutations.apply (lambda x: 
                                                                   [is_transient (x["protein"],
                                                                                  p,
                                                                                  expr,
-                                                                                 minTissues = minTissues,
-                                                                                 maxCoexpr = maxCoexpr)
+                                                                                 minPts = minPoints,
+                                                                                 maxCoexpr = maxCoexpr,
+                                                                                 singleExp = singleExp)
                                                                    for p in x["partners"]], axis=1)
     diseaseMutations ["transient_PPIs"] = diseaseMutations.apply (lambda x: 
                                                                   [is_transient (x["protein"],
                                                                                  p,
                                                                                  expr,
-                                                                                 minTissues = minTissues,
-                                                                                 maxCoexpr = maxCoexpr)
+                                                                                 minPts = minPoints,
+                                                                                 maxCoexpr = maxCoexpr,
+                                                                                 singleExp = singleExp)
                                                                    for p in x["partners"]], axis=1)
     
     write_list_table (naturalMutations, ["partners", "perturbations", "transient_PPIs"], natMutOutFile)

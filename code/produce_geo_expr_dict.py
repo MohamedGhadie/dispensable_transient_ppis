@@ -2,9 +2,10 @@
 # Produce a summary of GEO datasets.
 #----------------------------------------------------------------------------------------
 
-import os
+import pickle
+import numpy as np
 from pathlib import Path
-from geo_tools import produce_geo_dataset_summary
+from protein_function import produce_geo_expr_dict
 
 def main():
         
@@ -24,10 +25,11 @@ def main():
     gdsDir = geoDir / 'datasets'
     
     # input data files
-    gdsIDfile = geoDir / 'gds_accessions.txt'
+    gdsTypeFile = procDir / 'gds_subset_type.txt'
+    uniprotIDmapFile = procDir / 'to_human_uniprotID_map.pkl'
     
     # output data files
-    gdsTypeFile = procDir / 'gds_subset_type.txt'
+    exprFile = procDir / 'gds_expr.pkl'
     
     # create output directories if not existing
     if not procDir.exists():
@@ -37,7 +39,23 @@ def main():
     # 
     #------------------------------------------------------------------------------------
     
-    produce_geo_dataset_summary (gdsIDfile, gdsDir, gdsTypeFile)
-
+    produce_geo_expr_dict (gdsTypeFile,
+                           uniprotIDmapFile,
+                           gdsDir,
+                           exprFile,
+                           numPoints = 5)
+    
+    with open(exprFile, 'rb') as f:
+        expr = pickle.load(f)
+    
+    num = {k:0 for k in np.arange(1, 64)}
+    for p, v in expr.items():
+        num[len(v.keys())] += 1
+    
+    for p, v in num.items():
+        print('%d: %d' % (p, v))
+    
+    print(len(expr.keys()))
+    
 if __name__ == "__main__":
     main()

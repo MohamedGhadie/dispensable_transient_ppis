@@ -3,15 +3,14 @@
 #----------------------------------------------------------------------------------------
 
 import os
-import sys
-import pickle
-import warnings
+import io
 from pathlib import Path
 from subprocess import call
 from GEOparse import GEOparse
 
 def read_gds_softfile (gdsID, inDir = './'):
     
+    gdsID = str(gdsID)
     if not gdsID.startswith('GDS'):
         gdsID = 'GDS' + gdsID
     filepath = inDir / (gdsID + '.soft')
@@ -63,4 +62,65 @@ def download_geo_softfile (geoID,
                                       aspera = aspera)
     except:
         raise
-             
+
+def produce_geo_dataset_summary (inPath, gdsDir, outPath):
+    
+    with open(inPath, 'r') as fin:
+        gdsIDs = list(fin.read().split())
+    
+    types = {id:[] for id in gdsIDs}
+    timePoints = {id:[] for id in gdsIDs}
+    numFeatures, numSamples, numSubsets, timeMeasure = {}, {}, {}, {}
+    
+    for id in gdsIDs:
+        gds = read_gds_softfile (id, inDir = gdsDir)
+        if gds:
+            for subset in gds.subsets.values():
+                types[id].extend(subset.metadata['type'])
+            if 'time' in types[id]:
+                timeMeasure[id] = 'time'
+            elif 'development stage' in types[id]:
+                timeMeasure[id] = 'development stage'
+            elif 'age' in types[id]:
+                timeMeasure[id] = 'age'
+            else:
+                timeMeasure[id] = '-'
+            
+            if timeMeasure[id] != '-':
+                for subset in gds.subsets.values():
+                    if timeMeasure[id] in subset.metadata['type']:
+                        timePoints[id].extend(subset.metadata['description'])
+            
+            numFeatures[id] = gds.metadata['feature_count'][0]
+            numSamples[id] = gds.metadata['sample_count'][0]
+            numSubsets[id] = len(gds.subsets)
+    
+    types = {k:set(v) for k, v in types.items()}
+    
+    allTypes = []
+    for v in types.values():
+        allTypes.extend(list(v))
+    
+    print('\n' + 'Number of datasets: %d' % len(types))
+    print('\n' + 'Unique subset types (found in N datasets):')
+    for t in set(allTypes):
+        print('%s (%d datasets)' % (t, allTypes.count(t)))
+    
+    with io.open(outPath, "w") as fout:
+        fout.write ('\t'.join(['GDS_ID',
+                               'Feature_count',
+                               'Sample_count',
+                               'Subset_count',
+                               'Time_point_count',
+                               'Subset_types',
+                               'Time_measure',
+                               'Time_points']) + '\n')
+        for id, t in types.items():
+            fout.write ('\t'.join(['GDS' + id,
+                                   str(numFeatures[id]),
+                                   str(numSamples[id]),
+                                   str(numSubsets[id]),
+                                   str(len(timePoints[id])),
+                                   '; '.join(t),
+                                   timeMeasure[id],
+                                   '; '.join(timePoints[id])]) + '\n')
