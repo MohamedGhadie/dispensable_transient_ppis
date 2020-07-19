@@ -3,31 +3,27 @@
 #----------------------------------------------------------------------------------------
 
 import os
-import sys
 import re
 import pickle
 import warnings
-import numpy as np
-import pandas as pd
 from Bio import Seq, SeqIO
 from Bio.PDB import *
 from Bio.SeqUtils import seq1
 from urllib import error
 from itertools import compress
-from text_tools import write_fasta_file
 
 #-----------------------------------------
-# Global variables modified by modules
+# Global variables modified by modules.
 #-----------------------------------------
 
 # allow PDB structure downloading
 downloadStructures = True
 
 # suppress PDB warnings
-suppressWarnings = True
+suppressWarnings = False
 
 # maximum number of currently loaded structures
-MAX_STRUC = 5
+MAX_STRUC = 100
 
 # IDs of currently loaded PDB structures
 strucList = []
@@ -38,15 +34,11 @@ structures = {}
 # dictionary of PDB chain sequences
 chainSeq = {}
 
-# dictionary of labels for chain sequence positions associated with 3D coordinates
+# dictionary of of labels for chain sequence positions associated with 3D coordinates
 chainStrucResLabel = {}
 
 # mapping of chain sequence positions to residue IDs 
 resPosToID = {}
-
-#-----------------------------------------
-# Modules
-#-----------------------------------------
 
 def allow_pdb_downloads (download):
     """Set global variable to allow PDB downloads.
@@ -67,50 +59,6 @@ def suppress_pdb_warnings (suppress):
     """
     global suppressWarnings
     suppressWarnings = suppress
-
-def pdbfile_id (strucid):
-    """Return structure file ID from structure ID by appending ! to lowercase chain 
-        letters, if any.
-
-    Args:
-        strucid (str): structure ID.
-
-    Returns:
-        str: structure file ID.
-
-    """
-    m = re.search(r'-|_', strucid)
-    if m:
-        ind = m.start(0)
-        return strucid[:ind] + re.sub(r'([a-z])', r'!\1', strucid[ind:])
-    else:
-        return strucid
-
-def pdbfile_name (strucid):
-    """Return stucture file name from structure ID by appending ! to lowercase chain 
-        letters, if any.
-
-    Args:
-        strucid (str): structure ID.
-
-    Returns:
-        str: structure file name.
-
-    """
-    return 'pdb' + pdbfile_id (strucid) + '.ent'
-
-def solve_pdbfile_id (id):
-    """Resolve structure ID from structure file ID by removing ! from lowercase chain 
-        letters, if any.
-
-    Args:
-        id (str): structure file ID.
-
-    Returns:
-        str: structure ID.
-
-    """
-    return id.replace('!', '')
 
 def load_pdbtools_chain_sequences (inPath):
     """Load PDB chain sequences into global variable.
@@ -157,10 +105,9 @@ def load_structure (pdbid, structureFile):
         try:
             return PDBParser( QUIET=suppressWarnings ).get_structure( pdbid, str(structureFile) )
         except:
-            warnings.warn('Structure file not loaded')
             return None
     else:
-        warnings.warn('Structure file not found')
+        print( '\t' + 'Structure file not found' )
         return None
 
 def add_structure (pdbid, struc):
@@ -187,7 +134,7 @@ def retrieve_structure (pdbid, pdbDir):
 
     """
     if pdbid not in structures:
-        structureFile = pdbDir / pdbfile_name (pdbid)
+        structureFile = pdbDir / ('pdb' + pdbid + '.ent')
         if downloadStructures and not structureFile.is_file():
             try:
                 download_structure (pdbid, pdbDir)
@@ -212,22 +159,6 @@ def return_structure (pdbid, pdbDir):
     else:
         return None
 
-def return_chain (pdbID, chainID, pdbDir):
-    """Return chain object for given PDB chain ID.
-
-    Args:
-        pdbID (str): structure ID.
-        chainID (str): chain letter.
-        pdbDir (Path): path to local file directory where PDB structures are saved.
-
-    """
-    struc = return_structure (pdbID, pdbDir)
-    if struc:
-        model = struc[0]
-        if model.has_id(chainID):
-            return model[chainID]
-    return None
-
 def download_structures (inPath, outDir):
     """Download PDB structures associated with a list of pdb IDs.
 
@@ -238,20 +169,17 @@ def download_structures (inPath, outDir):
     """
     with open(inPath, 'r') as fin:
         pdbIDs = list( fin.read().split() )
-    n = len(pdbIDs)
+    print('\t' + '%d PDB IDs to check' % len(pdbIDs))
     failed = 0
-    for i, id in enumerate(pdbIDs):
+    for i, id in enumerate( pdbIDs ):
+        print('\t' + '%d downloads attempted, %d downloads failed' % (i, failed))
         filename = outDir / ('pdb' + id + '.ent')
         if not filename.is_file():
             try:
-                print()
-                download_structure (id, outDir)
+                download_structure ( id, outDir )
             except error.URLError:
                 failed += 1
-        sys.stdout.write('  %d out of %d IDs processed (%f%%), %d downloads failed \r' 
-                            % (i+1, n, 100*(i+1)/n, failed))
-        sys.stdout.flush()
-    print()
+    print('\t' + '%d downloads attempted, %d downloads failed' % (i + 1, failed))
 
 def download_structure (pdbid, outDir, fileFormat = 'pdb'):
     """Download PDB structure file.
@@ -368,11 +296,12 @@ def residues_per_chain (model):
             allresidues[chain.get_id()] = residues
     return allresidues
 
-def structured_residues_per_chain (pdbid, pdbDir):
+def ordered_residues_per_chain (pdbid, model, pdbDir):
     """Return all SEQRES residues per chain for all chains in a PDB model.
 
     Args:
         pdbid (str): PDB ID for model parent structure.
+        model (Bio.PDB.Model): PDB model.
         pdbDir (Path): path to file directory containing PDB structures.
     
     Returns:
@@ -380,13 +309,10 @@ def structured_residues_per_chain (pdbid, pdbDir):
     
     """
     resPerChain = {}
-    struc = return_structure (pdbid, pdbDir)
-    if struc:
-        model = struc[0]
-        for chain in model.get_chains():
-            residues = structured_chain_residues (pdbid, chain.get_id(), pdbDir)
-            if residues:
-                resPerChain[chain.get_id()] = residues
+    for chain in model.get_chains():
+        residues = ordered_chain_residues (pdbid, model, chain.get_id(), pdbDir)
+        if residues:
+            resPerChain[chain.get_id()] = residues
     return resPerChain
 
 def nonhet_residues_per_chain (model):
@@ -410,11 +336,12 @@ def nonhet_residues_per_chain (model):
             allresidues[chain.get_id()] = residues
     return allresidues
 
-def structured_chain_residues (pdbid, chainID, pdbDir):
+def ordered_chain_residues (pdbid, model, chainID, pdbDir):
     """Return all SEQRES residues of a chain. 
 
     Args:
         pdbid (str): PDB ID for model parent structure.
+        model (Bio.PDB.Model): PDB model.
         chainID (str): chain ID.
         pdbDir (Path): path to file directory containing PDB structures.
     
@@ -422,14 +349,9 @@ def structured_chain_residues (pdbid, chainID, pdbDir):
         dict: list of all SEQRES residues, including hetero-residues.
     
     """
-    struc = return_structure (pdbid, pdbDir)
-    if struc:
-        model = struc[0]
-        if model.has_id(chainID):
-            residues = chain_residues (model, chainID)
-            pos = return_chain_res_IDsToPos (pdbid, chainID, pdbDir)
-            return [res for res in residues if res.get_id() in pos]
-    return []
+    residues = chain_residues (model, chainID)
+    pos = return_chain_res_IDsToPos (pdbid, chainID, pdbDir)
+    return [res for res in residues if res.get_id() in pos]
 
 def chain_residues (model, chainID):
     """Return all residues of a chain that have 3D coordinates. 
@@ -445,86 +367,13 @@ def chain_residues (model, chainID):
     chain = model[chainID]
     return [res for res in chain.get_residues()]
 
-def get_chain_IDs (pdbid, pdbDir):
-    """Return all chain ID letters for a given structure. 
-
-    Args:
-        pdbid (str): structure ID.
-        pdbDir (Path): path to file directory containing PDB structures.
-    
-    Returns:
-        list
-    
-    """
-    struc = return_structure (pdbid, pdbDir)
-    if struc:
-        model = struc[0]
-        return [chain.get_id() for chain in model.get_chains()]
-    return []
-
-def structured_residue_sequence (pdbid, chainID, pdbDir):
-    """Return sequence of chain residues that have 3D cooridnates. 
-
-    Args:
-        pdbid (str): structure ID.
-        chainID (str): chain letter.
-        pdbDir (Path): path to file directory containing PDB structures.
-    
-    Returns:
-        list
-    
-    """
-    residues = structured_chain_residues (pdbid, chainID, pdbDir)
-    if residues:
-        return ''.join([seq1(res.get_resname(), undef_code='X') for res in residues])
-    else:
-        return ''
-
-def structured_residue_IDs (pdbid, chainID, pdbDir):
-    """Return residues IDs that have 3D cooridnates. 
-
-    Args:
-        pdbid (str): structure ID.
-        chainID (str): chain letter.
-        pdbDir (Path): path to file directory containing PDB structures.
-    
-    Returns:
-        list
-    
-    """
-    residues = structured_chain_residues (pdbid, chainID, pdbDir)
-    return [res.get_id() for res in residues]
-
-def structured_residue_ID (resOrder, pdbid, chainID, pdbDir):
-    """Return residue ID in specific sequence position among residues with 3D cooridnates. 
-
-    Args:
-        resOrder (int, 'first', 'last'): position of residue.
-        pdbid (str): structure ID.
-        chainID (str): chain letter.
-        pdbDir (Path): path to file directory containing PDB structures.
-    
-    Returns:
-        list
-    
-    """
-    resIDs = structured_residue_IDs (pdbid, chainID, pdbDir)
-    toNum = {'first':1, 'last':len(resIDs)}
-    if resOrder in toNum:
-        resOrder = toNum[resOrder]
-    try:
-        return resIDs[resOrder - 1]
-    except:
-        warnings.warn("Residue order requested out of range")
-        return ()
-    
 def is_contact (res, other_residues, maxDist):
     """Check if residue is in contact with a group of residues. 
 
     Args:
         res (Bio.PDB.Residue): residue to be checked.
         other_residues (list): other residues to check against.
-        maxDist (numeric): maximum distance in Angstroms allowed for contact.
+        maxDist (numeric): cutoff distance in Angstroms for contact residues.
     
     Returns:
         boolean
@@ -549,21 +398,6 @@ def get_distance (res1, res2):
     dist = [a1 - a2 for a1 in res1.get_unpacked_list() for a2 in res2.get_unpacked_list()]
     return min(dist)
 
-def count_res_neighbors (res, otherRes, nbDist):
-    """Count neighbors of a residue within a group of residues.
-
-    Args:
-        res (Residue): residue to count neighbors for.
-        otherRes (list): other residues in the group.
-        nbDist (numeric): cutoff distance in Angstroms for neighbor residues.
-    
-    Returns:
-        int
-    
-    """
-    nb = [get_distance(res, res2) < nbDist for res2 in otherRes]
-    return sum(nb)
-
 def get_interface_by_chainIDs (pdbDir,
                                chain_id1,
                                chain_id2,
@@ -574,7 +408,7 @@ def get_interface_by_chainIDs (pdbDir,
         pdbDir (Path): directory containing PDB structure files.
         chain_id1 (str): ID of first chain.
         chain_id2 (str): ID of second chain.
-        maxDist (numeric): maximum distance in Angstroms allowed between binding residues.
+        maxDist (numeric): cutoff distance in Angstroms for binding residues.
     
     Returns:
         list, list: positions of interface residues on chain sequences.
@@ -586,8 +420,9 @@ def get_interface_by_chainIDs (pdbDir,
         pdbID = pdbID1
         struc = return_structure (pdbID, pdbDir)
         if struc:
-            residues1 = structured_chain_residues (pdbID, id1, pdbDir)
-            residues2 = structured_chain_residues (pdbID, id2, pdbDir)
+            model = struc[0]
+            residues1 = ordered_chain_residues (pdbID, model, id1, pdbDir)
+            residues2 = ordered_chain_residues (pdbID, model, id2, pdbDir)
             interfaceIndex1, interfaceIndex2 = get_interface_indices (residues1,
                                                                       residues2,
                                                                       maxDist = maxDist)
@@ -610,7 +445,7 @@ def get_interface_indices (residues1, residues2, maxDist = 5):
     Args:
         residues1 (list): first list of residues.
         residues2 (list): second list of residues.
-        maxDist (numeric): maximum distance in Angstroms allowed between binding residues. 
+        maxDist (numeric): cutoff distance in Angstroms for binding residues. 
     
     Returns:
         list, list: indices of interface residues in each group.
@@ -626,40 +461,6 @@ def get_interface_indices (residues1, residues2, maxDist = 5):
         return sorted(set(interfaceIndex1)), sorted(set(interfaceIndex2))
     else:
         return [], []
-
-def count_neighbors_by_chainIDs (pdbid,
-                                 resPos,
-                                 hostchainID,
-                                 chainIDs,
-                                 pdbDir,
-                                 nbDist = 5):
-    """Count neighbors of a residue within a group of PDB chains.
-
-    Args:
-        pdbid (str): structure ID.
-        resPos (int): residue position on chain sequence.
-        hostchainID (str): ID of chain carrying the residue.
-        chainIDs (list): IDs of other chains to consider in the structure.
-        pdbDir (Path): directory path containing PDB structures.
-        nbDist (numeric): cutoff distance in Angstroms for neighbor residues.
-    
-    Returns:
-        numeric
-
-    """
-    _ , hostchainID = hostchainID.split('_')
-    resID = return_chain_res_posToID (pdbid, hostchainID, resPos, pdbDir)
-    if resID:
-        struc = return_structure (pdbid, pdbDir)
-        if struc:
-            residues = structured_residues_per_chain (pdbid, pdbDir)
-            res = struc[0][hostchainID][resID]
-            otherRes = [r for r in residues[hostchainID] if r.get_id() != resID]
-            for id in {id.split('_')[1] for id in chainIDs}:
-                if id != hostchainID:
-                    otherRes.extend(residues[id])
-            return count_res_neighbors (res, otherRes, nbDist)
-    return np.nan
 
 def return_multichain_res_posToIDs (pdbid, chainResPos, pdbDir):
     """Return residue IDs in multiple chains using sequence positions. 
@@ -750,7 +551,7 @@ def return_chain_res_posToIDs (pdbid, chainID, pdbDir):
     get_chain_res_posToIDs (pdbid, chainID, pdbDir)
     fullID = pdbid + '_' + chainID
     if fullID in resPosToID:
-        return resPosToID[fullID]
+        return resPosToID[ fullID ]
     else:
         return {}
 
@@ -808,85 +609,35 @@ def chain_res_pos_to_IDs (pdbid, chain, minFracValidRes = 0.8):
     """
     IDs = {}
     fullID = pdbid + '_' + chain.get_id()
-    sequence = return_chain_sequence (fullID)
-    strucResLabel = return_chain_strucRes_label (fullID)
-    mStart, resIDs = validated_strucRes_IDs (chain,
-                                             sequence,
-                                             strucResLabel,
-                                             minFracValidRes = minFracValidRes)
-    if resIDs:
-        for seqPos, label in enumerate(strucResLabel):
-            if (seqPos >= mStart) and (label == '-'):
-                IDs[seqPos + 1] = resIDs.pop(0)
-    return IDs
-
-def valid_strucRes (pdbid, chainID, pdbDir, minFracValidRes = 0.8):
-    """Check whether chain sequence read by Biopython matches a continuous subset of 
-        SEQRES chain sequence.
-
-    Args:
-        pdbid (str): structure ID.
-        chainID (str): chain letter.
-        pdbDir (Path): path to file directory containing PDB structures.
-        minFracValidRes (numeric): minimum required fraction of chain residue names 
-                                    successfully read by Biopython.
-    
-    Returns:
-        bool
-    
-    """
-    fullID = pdbid + '_' + chainID
-    sequence = return_chain_sequence (fullID)
-    strucResLabel = return_chain_strucRes_label (fullID)
-    struc = return_structure (pdbid, pdbDir)
-    if struc:
-        chain = struc[0][chainID]
-        mStart, resIDs = validated_strucRes_IDs (chain,
-                                                 sequence,
-                                                 strucResLabel,
-                                                 minFracValidRes = minFracValidRes)
-        if resIDs:
-            return True
-    return False
-
-def validated_strucRes_IDs (chain, seq, strucResLabel, minFracValidRes = 0.8):
-    """Return residue IDs of chain sequence read by Biopython matching a continuous subset of 
-        SEQRES chain sequence.
-
-    Args:
-        chain (Bio.PDB.Chain): chain object.
-        seq (str): full chain sequence in SEQRES records.
-        strucResLabel (str): labels for chain sequence residues with 3D coordinates.
-        minFracValidRes (numeric): minimum required fraction of chain residue names 
-                                    successfully read by Biopython.
-    
-    Returns:
-        numeric: SEQRES start position where Biopython sequence matches, list: matching residue IDs
-    
-    """
-    if seq and strucResLabel:
-        if len(seq) == len(strucResLabel):
+    seq = return_chain_sequence (fullID)
+    strucRes = return_chain_strucRes_label (fullID)
+    if seq and strucRes:
+        if len( seq ) == len( strucRes ):
             # construct chain sequence of structured residues based on SEQRES record 
-            seqres = ''.join(compress(seq, [c == '-' for c in strucResLabel]))
-            seqresLen = len(seqres)
+            seqres = ''.join( compress(seq, [c == '-' for c in strucRes]) )
+            seqresLen = len( seqres )
         
             # construct chain sequence of structured residues as read by BioPython
             coordresIDs = [ res.get_id() for res in chain.get_residues() ]
             coordres = [ seq1(res.get_resname(), undef_code='.') for res in chain.get_residues() ]
             coordresIDs = coordresIDs[ : seqresLen ]
             coordres = ''.join( coordres[ : seqresLen ] )
+            
             # check if fraction of valid structured residue names read by Biopython 
             # meets cutoff
-            if coordres:
-                if ( 1 - coordres.count('.') / len(coordres) ) >= minFracValidRes:
-                    # check if the sequence of structured residues read by Biopython 
-                    # is a subset of SEQRES
-                    match = re.search(coordres, seqres)
-                    if match:
-                        return match.start(), coordresIDs
-    return np.nan, []
+            if ( 1 - coordres.count('.') / len(coordres) ) >= minFracValidRes:
+                # check if the sequence of structured residues read by Biopython 
+                # is a subset of SEQRES 
+                match = re.search(coordres, seqres)
+                if match:
+                    mStart = match.start()
+                    for seqPos, label in enumerate(strucRes):
+                        if (seqPos >= mStart) and (label == '-'):
+                            if coordres:
+                                IDs[seqPos + 1] = coordresIDs.pop(0)
+    return IDs
 
-def produce_chain_list (inPath, outPath):
+def produce_chain_list (inPath, outPath):    
     """Produce list of PDB chain IDs from a fasta file of chain sequences.
 
     Args:
@@ -916,29 +667,7 @@ def produce_pdb_ids (inPath, outPath):
         for id in sorted(set(pdbIDs)):
             fout.write(id + '\n')
 
-def produce_chain_struc_sequences (chainIDs, pdbDir, outPath):
-    """Produce sequences of chain structure residues that are also part chain SEQRES 
-        sequences in fasta format.
-
-    Args:
-        chainIDs (list): list of tuples with template ID and chain ID.
-        pdbDir (Path): path to file directory containing PDB structures.
-        outPath (Path): file path to save sequences to.
-
-    """
-    IDs, seqs, n = [], [], len(chainIDs)
-    for i, (templateID, chainID) in enumerate(chainIDs):
-        sys.stdout.write('  chain %d out of %d (%.2f%%) \r' % (i+1, n, 100*(i+1)/n))
-        sys.stdout.flush()
-        pdbid = templateID.split('-')[0]
-        seq = structured_residue_sequence (pdbid, chainID, pdbDir)
-        if seq:
-            IDs.append('_'.join([templateID, chainID]))
-            seqs.append(seq)
-    df = pd.DataFrame(data={"ChainID":IDs, "Sequence":seqs})
-    write_fasta_file (df, "ChainID", "Sequence", outPath)
-
-def write_partial_structure (pdbid, chainIDs, pdbDir, outPath, resIDs = None):
+def write_partial_structure (pdbid, chainIDs, pdbDir, outPath):
     """Produce a partial PDB structure file for a subset of chains.
 
     Args:
@@ -946,37 +675,23 @@ def write_partial_structure (pdbid, chainIDs, pdbDir, outPath, resIDs = None):
         chainIDs (list): IDs for chains to be included in partial structure file.
         pdbDir (Path): path to file directory containing PDB structures.
         outPath (Path): file path to save partial structure to.
-        resIDs (dict): residue IDs to include from each chain.
 
     """
     struc = return_structure (pdbid, pdbDir)
     if struc:
         pdbio = PDBIO()
         pdbio.set_structure(struc)
-        pdbio.save(str(outPath), select = ChainSelect(chainIDs, resIDs = resIDs))
-    else:
-        warnings.warn("Structure file for PDB ID %s not found in order to write parital structure" % pdbid)
+        pdbio.save(str(outPath), select = ChainSelect(chainIDs))
 
 class ChainSelect (Select):
     """Class for chain collection used for creating partial PDB structures.
 
     Args:
-        chain_letters (list): chain letter IDs.
-        resIDs (dict): residue IDs to include from each chain.
+        Select (list): chain IDs.
 
     """
-    def __init__ (self, chain_letters, resIDs = None):
+    def __init__(self, chain_letters):
         self.chain_letters = chain_letters
-        self.resIDs = resIDs
     
-    def accept_chain (self, chain):
+    def accept_chain(self, chain):
         return (chain.get_id() in self.chain_letters)
-    
-    def accept_residue (self, residue):
-        chain_letter = residue.parent.get_id()
-        if not self.resIDs:
-            return True
-        elif chain_letter in self.resIDs:
-            return residue.get_id() in self.resIDs[chain_letter]
-        else:
-            return False

@@ -29,7 +29,7 @@ def main():
     uniprotIDmapFile = procDir / 'to_human_uniprotID_map.pkl'
     
     # output data files
-    exprFile = procDir / 'gds_expr.pkl'
+    exprFile = procDir / 'protein_expr_GEO.pkl'
     
     # create output directories if not existing
     if not procDir.exists():
@@ -43,7 +43,8 @@ def main():
                            uniprotIDmapFile,
                            gdsDir,
                            exprFile,
-                           numPoints = 5)
+                           numPoints = 5,
+                           avg = 'all')
     
     with open(exprFile, 'rb') as f:
         expr = pickle.load(f)

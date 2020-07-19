@@ -2,7 +2,6 @@
 # Modules for statistical computations.
 #----------------------------------------------------------------------------------------
 
-import time
 import numpy as np
 import scipy.stats as stats
 from itertools import compress
@@ -43,7 +42,7 @@ def t_test (sample1, sample2):
     
     """
     _, pvalue = stats.ttest_ind(sample1, sample2, equal_var = False)
-    print("t-test, p-value = %g" % pvalue)
+    print("t test, p-value = %g" % pvalue)
 
 def perm_test (sample1, sample2, iter):
     """Calculate statistical significance for difference in mean between two data samples
@@ -248,129 +247,6 @@ def proportion_sum_CI (k1, n1, k2, n2, a=1, b=1, conf = 95.0):
         return np.exp(lowerlog), np.exp(upperlog)
     else:
         return np.nan, np.nan
-
-def confidence_interval (n,
-                         k_obs,
-                         pvalues,
-                         alpha = 0.05,
-                         eventname = 'success',
-                         expname = 'experiments'):
-    """Calculate the confidence interval on a proportion k_obs/n using a Binomial 
-        distribution produced from Bernoulli trials.
-
-    Args:
-        n (int): proportion denominator.
-        k_obs (int): proportion numerator.
-        pvalues (array): probabilities of success used for Bernoulli trials.
-        alpha (float): p-value cutoff for reporting statistical significance.
-        eventname (str): name of success event in the Bernoulli trial (for display purpose).
-        expname (str): name of experiment on which Bernoulli trials are performed (for display purpose).
-    
-    Returns:
-        float, float
-
-    """
-    s = time.time()
-    prob1, prob2 = [], []
-    i1 = i2 = 0
-    found1 = found2 = False
-    if k_obs > n / 2:
-        pvalues = list(reversed(pvalues))
-    prev1, prev2 = binomial_prob (n, k_obs, pvalues[0])
-    for i, p in enumerate(pvalues):
-        bp1, bp2 = binomial_prob (n, k_obs, p, itr = 100000)
-        if (prev1 <= alpha <= bp1) or (bp1 <= alpha <= prev1):
-            i1 = i if abs(bp1 - alpha) <= abs(prev1 - alpha) else i - 1
-            found1 = True
-        if (prev2 <= alpha <= bp2) or (bp2 <= alpha <= prev2):
-            i2 = i if abs(bp2 - alpha) <= abs(prev2 - alpha) else i - 1
-            found2 = True
-        prob1.append(bp1)
-        prob2.append(bp2)
-        if found1 and found2:
-            break
-        prev1, prev2 = bp1, bp2
-    prob1 = prob1[:i1 + 1]
-    prob2 = prob2[:i2 + 1]
-    
-    lower_p, upper_p = sorted( ( pvalues[i1], pvalues[i2] )) 
-    print('P(≤%d %s events) and P(≥%d %s events) among %d %s ' % (k_obs,
-                                                                  eventname,
-                                                                  k_obs,
-                                                                  eventname,
-                                                                  n,
-                                                                  expname)
-          + 'are both >%.1f%% at %f < p < %f (simulation time = %.1f min)' % (alpha * 100,
-                                                                              lower_p,
-                                                                              upper_p,
-                                                                              (time.time() - s) / 60))
-    return lower_p, upper_p
-
-def binomial_prob (n, kobs, p, itr = 10000):
-    """Calculate the probability of observing ≤ kobs or ≥ kobs successes in a Bernoulli 
-        experiment with probability of success p.
-
-    Args:
-        n (int): number of trials in experiment.
-        kobs (int): number of successes observed in experiment.
-        p (float): probability of success used in Bernoulli trials.
-        itr (int): number of Bernoulli trials.
-
-    Returns:
-        float, float
-
-    """
-    result = []
-    k = np.random.binomial(n, p, size = itr)
-    for kmin, kmax in [(0, kobs), (kobs, n)]:
-        if p == 0:
-            bp = 1 if kmin <= 0 else 0
-        elif p == 1:
-            bp = 1 if kmax >= n else 0
-        else:
-            bp = sum((k >= kmin) & (k <= kmax)) / itr
-        result.append(bp)
-    return result
-
-def binomial_test_diff_in_fraction (n1, n2, k1, k2, itr = 10000):
-    """Calculate statistical significance for difference in two fractions by sampling from 
-    binomial distributions having equal probabilities of success (p).
-
-    Args:
-        n1 (int): number of trials performed on the first distribution.
-        n2 (int): number of trials performed on the second distribution.
-        k1 (int): number of observed successes from the first distribution.
-        k2 (int): number of observed successes from the second distribution.
-        itr (int): number of resamplings.
-    
-    """
-    binomial_test_diff_in_fraction_product ([n1], [n2], [k1], [k2], itr = itr)
-
-def binomial_test_diff_in_fraction_product (n1, n2, k1, k2, itr = 10000):
-    """Calculate statistical significance for difference in two fractions, each being the 
-    product of multiple fractions, by sampling from binomial distributions having equal 
-    probabilities of success (p).
-
-    Args:
-        n1 (list): number of trials performed on each distribution used in the first product.
-        n2 (list): number of trials performed on each distribution used in the second product.
-        k1 (list): number of observed successes from each distribution used in the first product.
-        k2 (list): number of observed successes from each distribution used in the second product.
-        itr (int): number of resamplings.
-    
-    """
-    obs_frac1 = np.array( [ k / n for k, n in zip(k1, n1) ] )
-    obs_frac2 = np.array( [ k / n for k, n in zip(k2, n2) ] )
-    avg_p = ( obs_frac1 + obs_frac2 ) / 2
-    obs_diff = np.abs( np.product( obs_frac1 ) - np.product( obs_frac2 ) )
-    frac1 = 1
-    for f in [ np.random.binomial(n, p, size = itr) / n for n, p in zip(n1, avg_p) ]:
-        frac1 *= f
-    frac2 = 1
-    for f in [ np.random.binomial(n, p, size = itr) / n for n, p in zip(n2, avg_p) ]:
-        frac2 *= f
-    p_value = sum( np.abs(frac1 - frac2) >= obs_diff ) / itr
-    print("binomial sampling test, p-value = %g (%d iterations)" % (p_value, itr))
 
 def compress_data (xpos, ypos, xstart = 0, binwidth = 0.1, perbin = 0):
     """Compress y-axis data based on x-axis binning.

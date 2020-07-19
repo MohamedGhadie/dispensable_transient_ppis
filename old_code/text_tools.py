@@ -132,33 +132,6 @@ def parse_HI_II_14_interactome (inPath,
         interactome = interactome[interactome["Protein_1"]!=interactome["Protein_2"]].reset_index(drop=True)
     interactome.to_csv(outPath, index=False, sep='\t')
 
-def parse_HuRI_interactome (inPath,
-                            UniProtIDmapFile,
-                            outPath,
-                            selfPPIs = True):
-    """Read protein-protein interactions that map to UniProt IDs from HuRI interactome file.
-
-    Args:
-        inPath (Path): path to file containing HuRI interactions.
-        UniProtIDmapFile (Path): path to file containing UniProt ID mapping dictionary.
-        outPath (Path): path to save processed interactions to.
-        selfPPIs (boolean): True to include self-PPIs.
-
-    """
-    with open(UniProtIDmapFile, 'rb') as f:
-        UniProtID = pickle.load(f)
-    interactome = pd.read_table (inPath, names = ["Ensembl_1", "Ensembl_2"], sep='\t')
-    interactome["Protein_1"] = interactome["Ensembl_1"].apply(lambda x: UniProtID[x]
-                                                                        if x in UniProtID
-                                                                        else '-')
-    interactome["Protein_2"] = interactome["Ensembl_2"].apply(lambda x: UniProtID[x]
-                                                                        if x in UniProtID
-                                                                        else '-')
-    interactome = interactome[(interactome[["Protein_1","Protein_2"]] != '-').all(1)].reset_index(drop=True)
-    if not selfPPIs:
-        interactome = interactome[interactome["Protein_1"] != interactome["Protein_2"]].reset_index(drop=True)
-    interactome.to_csv(outPath, index=False, sep='\t')
-
 def parse_skempi_interactome (inPath, outPath):
     """Read protein-protein interactions from SKEMPI mutation file.
 
@@ -487,7 +460,7 @@ def write_beluga_job (outPath,
                       jobname = None,
                       commands = None):
     """Create a job file to be run on Compute Canada Beluga cluster.
-        See https://docs.computecanada.ca/wiki/Beluga/en
+        See https://docs.computecanada.ca/wiki/Béluga/en
 
     Args:
         outPath (Path): path to save job file to.

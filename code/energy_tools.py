@@ -1,19 +1,22 @@
 #----------------------------------------------------------------------------------------
-# Modules for calculating and processing change in free energy (∆∆G) data.
+# Modules for calculating and processing structural energy.
 #----------------------------------------------------------------------------------------
 
 import os
 import io
+import re
+import sys
+import pandas as pd
 from pathlib import Path
-from text_tools import write_guillimin_job, write_beluga_job
-from pdb_tools import clear_structures, write_partial_structure
+from text_tools import write_beluga_job
+from pdb_tools import pdbfile_id, solve_pdbfile_id, clear_structures, write_partial_structure
 
 def read_unprocessed_ddg_mutations (inPath, type = 'binding'):
     """Read PDB chain mutations with missing ∆∆G values from file.
 
     Args:
         inPath (Path): path to file containing mutations.
-        type (str): type of ∆∆G values, 'binding' for interface ∆∆G, 'folding' for protein folding ∆∆G.
+        type (str): type of ∆∆G values; 'binding' for interface ∆∆G, 'folding' for protein folding ∆∆G.
 
     Returns:
         dict
@@ -46,69 +49,50 @@ def read_unprocessed_ddg_mutations (inPath, type = 'binding'):
                         done.add(mutation)
     return {k:list(v) for k, v in mutations.items()}
 
-def produce_bindprofx_and_guillimin_jobs (mutations,
-                                          pdbDir,
-                                          outDir,
-                                          nodes = 1,
-                                          ppn = 1,
-                                          pmem = 7700,
-                                          walltime = '1:00:00:00',
-                                          rapid = None,
-                                          username = '',
-                                          extraCommands = None,
-                                          serverDataDir = '../data'):
-    """Produce data files for BindProfX ∆∆G calculations as well as job files for Guillimin 
-        server. See http://www.hpc.mcgill.ca
+def read_unprocessed_energy_ppis (inPath):
+    """Read PPI structures with missing interaction energy values from file.
 
     Args:
-        mutations (dict): mutations associated with each structural model.
-        pdbDir (Path): file directory containing PDB structures.
-        outDir (Path): file directory to save BindProfX data files and Guillimin job files to.
-        nodes (numeric): number of server nodes to be allocated.
-        ppn (numeric): total number of CPU cores to be allocated.
-        pmem (numeric): default random access memory (RAM) in MB to be reserved per core.
-        walltime (str): maximum time allowed for job to run on server in format days:hr:min:sec.
-        rapid (str): resource allocation project identifier (RAPid) for HPC user.
-        username (str): user name to associate with HPC server job.
-        extraCommands (list): additional non-bindprofx commands to be written to job file.
-        serverDataDir (Path): data directory used by HPC server relative to job directory.
+        inPath (Path): path to file containing PPI structure energy values.
+
+    Returns:
+        dict
 
     """
-    produce_bindprofx_jobs (mutations, pdbDir, outDir / 'data')
-    produce_guillimin_bindprofx_jobs (mutations,
-                                      outDir / 'jobs',
-                                      nodes = nodes,
-                                      ppn = ppn,
-                                      pmem = pmem,
-                                      walltime = walltime,
-                                      rapid = rapid,
-                                      username = username,
-                                      extraCommands = extraCommands,
-                                      serverDataDir = serverDataDir,)
+    ppis = pd.read_table (inPath, sep='\t')
+    ppis = ppis[ppis["Interaction_energy"] == '-']
+    structures = {strucID: (c1, c2) for strucID, c1, c2 in ppis[["Complex_ID",
+                                                                 "Chain_1",
+                                                                 "Chain_2"]].values}
+    return structures
 
-def produce_bindprofx_and_beluga_jobs (mutations,
-                                       pdbDir,
-                                       outDir,
-                                       account = 'ctb-yxia',
-                                       walltime = '1-00',
-                                       ntasks = 1,
-                                       nodes = 1,
-                                       ntasks_per_node = 1,
-                                       cpus_per_task = 1,
-                                       mem = None,
-                                       mem_per_cpu = '4000M',
-                                       outputfile = '%x-%j.out',
-                                       errorfile = None,
-                                       username = '',
-                                       extraCommands = None,
-                                       serverDataDir = '../data'):
-    """Produce data files for BindProfX ∆∆G calculations as well as job files for Beluga server.
-        See https://docs.computecanada.ca/wiki/Béluga/en
+def produce_foldx_and_beluga_jobs (data,
+                                   pdbDir,
+                                   outDir,
+                                   type,
+                                   foldxParam = None,
+                                   account = 'ctb-yxia',
+                                   walltime = '1-00',
+                                   ntasks = 1,
+                                   nodes = 1,
+                                   ntasks_per_node = 1,
+                                   cpus_per_task = 1,
+                                   mem = None,
+                                   mem_per_cpu = '4G',
+                                   outputfile = '%x-%j.out',
+                                   errorfile = None,
+                                   username = '',
+                                   extraCommands = None,
+                                   serverDataDir = '../data'):
+    """Produce jobs for the FoldX method for ∆∆G calculations using several commands.
 
     Args:
-        mutations (dict): mutations associated with each structural model.
+        data (dict): either mutations or chain pairs associated with each structure.
         pdbDir (Path): file directory containing PDB structures.
-        outDir (Path): file directory to save jobs to.
+        outDir (Path): file directory to save FoldX data files and Beluga jobs to.
+        type (str): type of FoldX calculation; 'binding' for interface ∆∆G, 
+                    'folding' for protein folding ∆∆G, 'ppi_energy' for interaction energy.
+        foldxParam (dict): parameters used for each FoldX job, otherwise default.
         account (str): project account name.
         walltime (str): maximum time allowed for job to run.
         ntasks (numeric): number of processes to be allocated.
@@ -120,12 +104,59 @@ def produce_bindprofx_and_beluga_jobs (mutations,
         outputfile (Path): path to file where standard output is written.
         errorfile (Path): path to file where runtime error is written.
         username (str): user name to associate with Beluga server job.
-        extraCommands (list): additional non-bindprofx commands to be written to job file.
+        extraCommands (list): additional non-foldx commands to be written to job file.
         serverDataDir (Path): data directory used by Beluga server relative to job directory.
 
     """
-    produce_bindprofx_jobs (mutations, pdbDir, outDir / 'data')
-    produce_beluga_bindprofx_jobs (mutations,
+    if type is 'folding':
+        produce_foldx_buildmodel_jobs (data,
+                                       pdbDir,
+                                       outDir / 'data',
+                                       parameters = foldxParam)
+        produce_beluga_foldx_jobs (data,
+                                   type,
+                                   outDir / 'jobs',
+                                   account = account,
+                                   walltime = walltime,
+                                   ntasks = ntasks,
+                                   nodes = nodes,
+                                   ntasks_per_node = ntasks_per_node,
+                                   cpus_per_task = cpus_per_task,
+                                   mem = mem,
+                                   mem_per_cpu = mem_per_cpu,
+                                   outputfile = outputfile,
+                                   errorfile = errorfile,
+                                   username = username,
+                                   extraCommands = extraCommands,
+                                   serverDataDir = serverDataDir)
+    elif type is 'binding':
+        produce_foldx_pssm_jobs (data,
+                                 pdbDir,
+                                 outDir / 'data',
+                                 parameters = foldxParam)
+        produce_beluga_foldx_jobs (data,
+                                   type,
+                                   outDir / 'jobs',
+                                   account = account,
+                                   walltime = walltime,
+                                   ntasks = ntasks,
+                                   nodes = nodes,
+                                   ntasks_per_node = ntasks_per_node,
+                                   cpus_per_task = cpus_per_task,
+                                   mem = mem,
+                                   mem_per_cpu = mem_per_cpu,
+                                   outputfile = outputfile,
+                                   errorfile = errorfile,
+                                   username = username,
+                                   extraCommands = extraCommands,
+                                   serverDataDir = serverDataDir)
+    elif type is 'ppi_energy':
+        produce_foldx_analyseComplex_jobs (data,
+                                           pdbDir,
+                                           outDir / 'data',
+                                           parameters = foldxParam)
+        produce_beluga_foldx_jobs (data,
+                                   type,
                                    outDir / 'jobs',
                                    account = account,
                                    walltime = walltime,
@@ -141,294 +172,14 @@ def produce_bindprofx_and_beluga_jobs (mutations,
                                    extraCommands = extraCommands,
                                    serverDataDir = serverDataDir)
 
-def produce_bindprofx_jobs (mutations, pdbDir, outDir):
-    """Produce jobs to be submitted to BindProfX server for ∆∆G calculations.
-
-    Args:
-        mutations (dict): mutations associated with each structural model.
-        pdbDir (Path): file directory containing PDB structures.
-        outDir (Path): file directory to save BindProfX jobs to.
-
-    """
-    clear_structures()
-    if not outDir.exists():
-        os.makedirs(outDir)
-    
-    for struc, mutList in mutations.items():
-        strucid = '_'.join(struc)
-        strucDir = outDir / strucid
-        if not strucDir.exists():
-            os.makedirs(strucDir)
-        mutListFile = strucDir / 'mutList.txt'
-        mutList = ['%s;' % mutList.pop(0)] + ['\n%s;' % mut for mut in mutList]
-        with io.open(mutListFile, "w") as fout:
-            for mut in mutList:
-                fout.write(mut)
-        pdbid, chainID1, chainID2 = struc[:3]
-        write_partial_structure (pdbid,
-                                 [chainID1, chainID2],
-                                 pdbDir,
-                                 strucDir / 'complex.pdb')
-
-def produce_guillimin_bindprofx_jobs (mutations,
-                                      outDir,
-                                      nodes = 1,
-                                      ppn = 1,
-                                      pmem = 7700,
-                                      walltime = '1:00:00:00',
-                                      rapid = None,
-                                      username = '',
-                                      extraCommands = None,
-                                      serverDataDir = '../data'):
-    """Produce Guillimin server job files specific to BindProfX ∆∆G calculations.
-        See http://www.hpc.mcgill.ca
-
-    Args:
-        mutations (dict): mutations associated with each structural model.
-        outDir (Path): file directory to save jobs to.
-        nodes (numeric): number of server nodes to be allocated.
-        ppn (numeric): total number of CPU cores to be allocated.
-        pmem (numeric): default random access memory (RAM) in MB to be reserved per core.
-        walltime (str): maximum time allowed for job to run on server in format days:hr:min:sec.
-        rapid (str): resource allocation project identifier (RAPid) for HPC user.
-        username (str): user name to associate with HPC server job.
-        extraCommands (list): additional non-bindprofx commands to be written to job file.
-        serverDataDir (Path): data directory used by HPC server relative to job directory.
-
-    """
-    if not outDir.exists():
-        os.makedirs(outDir)
-    
-    for struc, mutList in mutations.items():
-        strucid = '_'.join(struc)
-        commands = ['../bin/get_final_score.py %s/%s' % (serverDataDir, strucid)]
-        if extraCommands:
-            commands = extraCommands + commands
-        write_guillimin_job (outDir / (strucid + '_job.txt'),
-                             nodes = nodes,
-                             ppn = ppn,
-                             pmem = pmem,
-                             walltime = walltime,
-                             outputfile = '%s/%s/outputfile' % (serverDataDir, strucid),
-                             errorfile = '%s/%s/errorfile' % (serverDataDir, strucid),
-                             rapid = rapid,
-                             jobid = username + '_bindprofx_' + strucid,
-                             commands = commands)
-
-def produce_beluga_bindprofx_jobs (mutations,
-                                   outDir,
-                                   account = 'ctb-yxia',
-                                   walltime = '1-00',
-                                   ntasks = 1,
-                                   nodes = 1,
-                                   ntasks_per_node = 1,
-                                   cpus_per_task = 1,
-                                   mem = None,
-                                   mem_per_cpu = '4000M',
-                                   outputfile = '%x-%j.out',
-                                   errorfile = None,
-                                   username = '',
-                                   extraCommands = None,
-                                   serverDataDir = '../data'):
-    """Produce Beluga server job files specific to BindProfX ∆∆G calculations.
-        See https://docs.computecanada.ca/wiki/Béluga/en
-
-    Args:
-        mutations (dict): mutations associated with each structural model.
-        outDir (Path): file directory to save jobs to.
-        account (str): project account name.
-        walltime (str): maximum time allowed for job to run.
-        ntasks (numeric): number of processes to be allocated.
-        nodes (numeric): number of server nodes to be allocated.
-        ntasks_per_node (numeric): number of processes to be allocated per node.
-        cpus_per_task (numeric): number of nodes to be allocated per process.
-        mem (str): memory per node.
-        mem_per_cpu (str): memory per core.
-        outputfile (Path): path to file where standard output is written.
-        errorfile (Path): path to file where runtime error is written.
-        username (str): user name to associate with Beluga server job.
-        extraCommands (list): additional non-bindprofx commands to be written to job file.
-        serverDataDir (Path): data directory used by Beluga server relative to job directory.
-
-    """
-    if not outDir.exists():
-        os.makedirs(outDir)
-    
-    for struc, mutList in mutations.items():
-        strucid = '_'.join(struc)
-        commands = ['../bin/get_final_score.py %s/%s' % (serverDataDir, strucid)]
-        if extraCommands:
-            commands = extraCommands + commands
-        write_beluga_job (outDir / (strucid + '_job.txt'),
-                          account = account,
-                          walltime = walltime,
-                          ntasks = ntasks,
-                          nodes = nodes,
-                          ntasks_per_node = ntasks_per_node,
-                          cpus_per_task = cpus_per_task,
-                          mem = mem,
-                          mem_per_cpu = mem_per_cpu,
-                          outputfile = outputfile,
-                          errorfile = errorfile,
-                          jobname = username + '_bindprofx_' + strucid,
-                          commands = commands)
-
-def read_bindprofx_results (inDir):
-    """Read mutation ∆∆G results produced by BindProfX.
-
-    Args:
-        inDir (Path): file directory containing BindProfX results.
-
-    Returns:
-        dict, dict: processed and unprocessed mutations.
-
-    """
-    processed, unprocessed = {}, {}
-    strucDir = os.listdir(inDir)
-    strucDir = [dir for dir in strucDir if os.path.isdir(inDir / dir)]
-    for strucID in strucDir:
-        struc = tuple(strucID.split('_'))
-        if len(struc) > 3:
-            struc = struc[:-1]
-        
-        results = []
-        resultFile = inDir / strucID / 'result.txt'
-        if resultFile.is_file():
-            with io.open(resultFile, "r") as f:
-                results = list( map(str.strip, f.read().split(';')) )
-            results.remove('')
-            for result in results:
-                ddg, mut = result.split()
-                processed[struc + (mut,)] = float(ddg)
-        
-        if not results:
-            mutListFile = inDir / strucID / 'mutList.txt'
-            with open(mutListFile, 'r') as f:
-                mutList = list( map(str.strip, f.read().split(';')) )
-            mutList.remove('')
-            if len(mutList) == 1:
-                processed[struc + (mutList.pop(),)] = 'X'
-            elif len(mutList) > 1:
-                errorFile = inDir / strucID / 'errorfile'
-                with open(errorFile, 'r') as f:
-                    error = f.read()
-                if (('FileNotFoundError: [Errno 2] No such file or directory:' in error) and
-                    ('align.out' in error)):
-                    for mut in mutList:
-                        processed[struc + (mut,)] = 'X'
-                else:
-                    for mut in mutList:
-                        unprocessed[struc + (mut,)] = [mut]
-    
-    return processed, unprocessed
-
-def produce_foldx_and_guillimin_jobs (mutations,
-                                      pdbDir,
-                                      outDir,
-                                      foldxParam = None,
-                                      nodes = 1,
-                                      ppn = 1,
-                                      pmem = 7700,
-                                      walltime = '1:00:00:00',
-                                      rapid = None,
-                                      username = '',
-                                      extraCommands = None,
-                                      serverDataDir = '../data'):
-    """Produce data files for FoldX ∆∆G calculations as well as job files for Guillimin 
-    server. See http://www.hpc.mcgill.ca
-
-    Args:
-        mutations (dict): mutations associated with each structural model.
-        pdbDir (Path): file directory containing PDB structures.
-        outDir (Path): file directory to save FoldX data files and Guillimin job files to.
-        foldxParam (dict): FoldX parameters used for each mutation job, otherwise default.
-        nodes (numeric): number of server nodes to be allocated.
-        ppn (numeric): total number of CPU cores to be allocated.
-        pmem (numeric): default random access memory (RAM) in MB to be reserved per core.
-        walltime (str): maximum time allowed for job to run on server in format days:hr:min:sec.
-        rapid (str): resource allocation project identifier (RAPid) for HPC user.
-        username (str): user name to associate with HPC server job.
-        extraCommands (list): additional non-foldx commands to be written to job file.
-        serverDataDir (Path): data directory used by HPC server relative to job directory.
-
-    """
-    produce_foldx_jobs (mutations, pdbDir, outDir / 'data', parameters = foldxParam)
-    produce_guillimin_foldx_jobs (mutations,
-                                  outDir / 'jobs',
-                                  nodes = nodes,
-                                  ppn = ppn,
-                                  pmem = pmem,
-                                  walltime = walltime,
-                                  rapid = rapid,
-                                  username = username,
-                                  extraCommands = extraCommands,
-                                  serverDataDir = serverDataDir,)
-
-def produce_foldx_and_beluga_jobs (mutations,
-                                   pdbDir,
-                                   outDir,
-                                   foldxParam = None,
-                                   account = 'ctb-yxia',
-                                   walltime = '1-00',
-                                   ntasks = 1,
-                                   nodes = 1,
-                                   ntasks_per_node = 1,
-                                   cpus_per_task = 1,
-                                   mem = None,
-                                   mem_per_cpu = '4000M',
-                                   outputfile = '%x-%j.out',
-                                   errorfile = None,
-                                   username = '',
-                                   extraCommands = None,
-                                   serverDataDir = '../data'):
-    """Produce data files for FoldX ∆∆G calculations as well as job files for Beluga server.
-        See https://docs.computecanada.ca/wiki/Béluga/en
-
-    Args:
-        mutations (dict): mutations associated with each structural model.
-        pdbDir (Path): file directory containing PDB structures.
-        outDir (Path): file directory to save jobs to.
-        foldxParam (dict): FoldX parameters used for each mutation job, otherwise default.
-        account (str): project account name.
-        walltime (str): maximum time allowed for job to run.
-        ntasks (numeric): number of processes to be allocated.
-        nodes (numeric): number of server nodes to be allocated.
-        ntasks_per_node (numeric): number of processes to be allocated per node.
-        cpus_per_task (numeric): number of nodes to be allocated per process.
-        mem (str): memory per node.
-        mem_per_cpu (str): memory per core.
-        outputfile (Path): path to file where standard output is written.
-        errorfile (Path): path to file where runtime error is written.
-        username (str): user name to associate with Beluga server job.
-        extraCommands (list): additional non-foldx commands to be written to job file.
-        serverDataDir (Path): data directory used by Beluga server relative to job directory.
-
-    """
-    produce_foldx_jobs (mutations, pdbDir, outDir / 'data', parameters = foldxParam)
-    produce_beluga_foldx_jobs (mutations,
-                               outDir / 'jobs',
-                               account = account,
-                               walltime = walltime,
-                               ntasks = ntasks,
-                               nodes = nodes,
-                               ntasks_per_node = ntasks_per_node,
-                               cpus_per_task = cpus_per_task,
-                               mem = mem,
-                               mem_per_cpu = mem_per_cpu,
-                               outputfile = outputfile,
-                               errorfile = errorfile,
-                               username = username,
-                               extraCommands = extraCommands,
-                               serverDataDir = serverDataDir)
-
-def produce_foldx_jobs (mutations, pdbDir, outDir, parameters = None):
-    """Produce jobs to be submitted to FoldX server for ∆∆G calculations.
+def produce_foldx_buildmodel_jobs (mutations, pdbDir, outDir, parameters = None):
+    """Produce jobs for the FoldX method for ∆∆G calculation using 'BuildModel' command.
 
     Args:
         mutations (dict): mutations associated with each structural model.
         pdbDir (Path): file directory containing PDB structures.
         outDir (Path): file directory to save FoldX jobs to.
-        parameters (dict): FoldX parameters used for each mutation job, otherwise default.
+        parameters (dict): parameters used for each FoldX job, otherwise default.
 
     """
     clear_structures()
@@ -442,8 +193,77 @@ def produce_foldx_jobs (mutations, pdbDir, outDir, parameters = None):
                      'vdwDesign':2}
     if not parameters:
         parameters = {}
-    for struc, mutList in mutations.items():
-        strucid = '_'.join(struc)
+    mutations = mutations.items()
+    n = len(mutations)
+    print('Writing FoldX BuildModel files:')
+    for i, (struc, mutList) in enumerate(mutations):
+        sys.stdout.write('  Structure %d out of %d (%.2f%%) \r' % (i+1, n, 100*(i+1)/n))
+        sys.stdout.flush()
+        strucid = get_strucID (struc)
+        strucDir = outDir / strucid
+        if not strucDir.exists():
+            os.makedirs(strucDir)
+        mutListFile = strucDir / 'individual_list.txt'
+        mutList = ['%s;' % mutList.pop(0)] + ['\n%s;' % mut for mut in mutList]
+        with io.open(mutListFile, "w") as fout:
+            for mut in mutList:
+                fout.write(mut)
+        pdbid, chainID = struc[:2]
+        write_partial_structure (pdbid,
+                                 [chainID],
+                                 pdbDir,
+                                 strucDir / (strucid + '.pdb'))
+        write_foldx_config (strucDir / 'config_repairPDB.cfg',
+                            'RepairPDB',
+                            pdb_dir = '../data/%s' % strucid,
+                            output_dir = '../data/%s' % strucid,
+                            pdb_file = '%s.pdb' % strucid)
+        mutParam = {k:v for k, v in default_param.items()}
+        if struc in parameters:
+            for k, v in parameters[struc].items():
+                mutParam[k] = v
+        write_foldx_config (strucDir / 'config_buildModel.cfg',
+                            'BuildModel',
+                            pdb_dir = '../data/%s' % strucid,
+                            output_dir = '../data/%s' % strucid,
+                            pdb_file = '%s_Repair.pdb' % strucid,
+                            mutant_file = '../data/%s/individual_list.txt' % strucid,
+                            temp = mutParam['temp'],
+                            ph = mutParam['ph'],
+                            ionStrength = mutParam['ionStrength'],
+                            water = mutParam['water'],
+                            vdwDesign = mutParam['vdwDesign'])
+    print()
+
+def produce_foldx_pssm_jobs (mutations, pdbDir, outDir, parameters = None):
+    """Produce jobs for the FoldX method for ∆∆G calculation using PSSM command.
+
+    Args:
+        mutations (dict): mutations associated with each structural model.
+        pdbDir (Path): file directory containing PDB structures.
+        outDir (Path): file directory to save FoldX jobs to.
+        parameters (dict): parameters used for each FoldX job, otherwise default.
+
+    """
+    clear_structures()
+    if not outDir.exists():
+        os.makedirs(outDir)
+    
+    default_param = {'temp':298,
+                     'ph':7,
+                     'ionStrength':0.05,
+                     'water':'-IGNORE',
+                     'vdwDesign':2}
+    if not parameters:
+        parameters = {}
+    
+    mutations = mutations.items()
+    n = len(mutations)
+    print('Writing FoldX PSSM files:')
+    for i, (struc, mutList) in enumerate(mutations):
+        sys.stdout.write('  Structure %d out of %d (%.2f%%) \r' % (i+1, n, 100*(i+1)/n))
+        sys.stdout.flush()
+        strucid = get_strucID (struc)
         pdbid, chainID1, chainID2 = struc[:3]
         for mut in mutList:
             mutID = '_'.join([strucid, mut])
@@ -476,6 +296,71 @@ def produce_foldx_jobs (mutations, pdbDir, outDir, parameters = None):
                                 ionStrength = mutParam['ionStrength'],
                                 water = mutParam['water'],
                                 vdwDesign = mutParam['vdwDesign'])
+    print()
+
+def produce_foldx_analyseComplex_jobs (structures, pdbDir, outDir, parameters = None):
+    """Produce jobs for the FoldX interaction energy calculation using AnalyseComplex command.
+
+    Args:
+        structures (dict): chain letters associated with each structure ID.
+        pdbDir (Path): file directory containing PDB structures.
+        outDir (Path): file directory to save FoldX jobs to.
+        parameters (dict): parameters used for each FoldX job, otherwise default.
+
+    """
+    clear_structures()
+    if not outDir.exists():
+        os.makedirs(outDir)
+    
+    default_param = {'temp':298,
+                     'ph':7,
+                     'ionStrength':0.05,
+                     'water':'-IGNORE',
+                     'vdwDesign':2}
+    if not parameters:
+        parameters = {}
+    
+    n = len(structures)
+    print('Writing FoldX AnalyseComplex files:')
+    for i, (pdbid, chainIDs) in enumerate(structures.items()):
+        sys.stdout.write('  Structure %d out of %d (%.2f%%) \r' % (i+1, n, 100*(i+1)/n))
+        sys.stdout.flush()
+        
+        chainID1, chainID2 = chainIDs
+        struc = pdbid, chainID1, chainID2
+        strucID = get_strucID (struc)
+        strucDir = outDir / strucID
+        if not strucDir.exists():
+            os.makedirs(strucDir)
+        
+        write_partial_structure (pdbid,
+                                 [chainID1, chainID2],
+                                 pdbDir,
+                                 strucDir / (strucID + '.pdb'))
+        
+        write_foldx_config (strucDir / 'config_repairPDB.cfg',
+                            'RepairPDB',
+                            pdb_dir = '../data/%s' % strucID,
+                            output_dir = '../data/%s' % strucID,
+                            pdb_file = '%s.pdb' % strucID)
+        
+        strucParam = {k:v for k, v in default_param.items()}
+        if struc in parameters:
+            for k, v in parameters[struc].items():
+                strucParam[k] = v
+        
+        write_foldx_config (strucDir / 'config_analyseComplex.cfg',
+                            'AnalyseComplex',
+                            other_cmd = ['analyseComplexChains=%s,%s' % (chainID1, chainID2)],
+                            pdb_dir = '../data/%s' % strucID,
+                            output_dir = '../data/%s' % strucID,
+                            pdb_file = '%s_Repair.pdb' % strucID,
+                            temp = strucParam['temp'],
+                            ph = strucParam['ph'],
+                            ionStrength = strucParam['ionStrength'],
+                            water = strucParam['water'],
+                            vdwDesign = strucParam['vdwDesign'])
+    print()
 
 def write_foldx_config (outPath,
                         command,
@@ -524,55 +409,8 @@ def write_foldx_config (outPath,
         fout.write('\n' + 'water=%s' % water)
         fout.write('\n' + 'vdwDesign=%d' % vdwDesign)
 
-def produce_guillimin_foldx_jobs (mutations,
-                                  outDir,
-                                  nodes = 1,
-                                  ppn = 1,
-                                  pmem = 7700,
-                                  walltime = '1:00:00:00',
-                                  rapid = None,
-                                  username = '',
-                                  extraCommands = None,
-                                  serverDataDir = '../data'):
-    """Produce Guillimin server job files specific to FoldX ∆∆G calculations.
-        See http://www.hpc.mcgill.ca
-
-    Args:
-        mutations (dict): mutations associated with each structural model.
-        outDir (Path): file directory to save jobs to.
-        nodes (numeric): number of server nodes to be allocated.
-        ppn (numeric): total number of CPU cores to be allocated.
-        pmem (numeric): default random access memory (RAM) in MB to be reserved per core.
-        walltime (str): maximum time allowed for job to run on server in format days:hr:min:sec.
-        rapid (str): resource allocation project identifier (RAPid) for HPC user.
-        username (str): user name to associate with HPC server job.
-        extraCommands (list): additional non-foldx commands to be written to job file.
-        serverDataDir (Path): data directory used by HPC server relative to job directory.
-
-    """
-    if not outDir.exists():
-        os.makedirs(outDir)
-    
-    for struc, mutList in mutations.items():
-        strucid = '_'.join(struc)
-        for mut in mutList:
-            mutID = '_'.join([strucid, mut])
-            commands = ['../foldx -f %s/%s/config_repairPDB.cfg' % (serverDataDir, mutID),
-                        '../foldx -f %s/%s/config_pssm.cfg' % (serverDataDir, mutID)]
-            if extraCommands:
-                    commands = extraCommands + commands
-            write_guillimin_job (outDir / (mutID + '_job.txt'),
-                                 nodes = nodes,
-                                 ppn = ppn,
-                                 pmem = pmem,
-                                 walltime = walltime,
-                                 outputfile = '%s/%s/outputfile' % (serverDataDir, mutID),
-                                 errorfile = '%s/%s/errorfile' % (serverDataDir, mutID),
-                                 rapid = rapid,
-                                 jobid = username + '_foldx_' + mutID,
-                                 commands = commands)
-
-def produce_beluga_foldx_jobs (mutations,
+def produce_beluga_foldx_jobs (data,
+                               type,
                                outDir,
                                account = 'ctb-yxia',
                                walltime = '1-00',
@@ -581,7 +419,7 @@ def produce_beluga_foldx_jobs (mutations,
                                ntasks_per_node = 1,
                                cpus_per_task = 1,
                                mem = None,
-                               mem_per_cpu = '4000M',
+                               mem_per_cpu = '4G',
                                outputfile = '%x-%j.out',
                                errorfile = None,
                                username = '',
@@ -591,7 +429,9 @@ def produce_beluga_foldx_jobs (mutations,
         See https://docs.computecanada.ca/wiki/Béluga/en
 
     Args:
-        mutations (dict): mutations associated with each structural model.
+        data (dict): either mutations or chain pairs associated with each structure.
+        type (str): type of FoldX calculation; 'binding' for interface ∆∆G, 
+                    'folding' for protein folding ∆∆G, 'ppi_energy' for interaction energy.
         outDir (Path): file directory to save jobs to.
         account (str): project account name.
         walltime (str): maximum time allowed for job to run.
@@ -611,15 +451,15 @@ def produce_beluga_foldx_jobs (mutations,
     if not outDir.exists():
         os.makedirs(outDir)
     
-    for struc, mutList in mutations.items():
-        strucid = '_'.join(struc)
-        for mut in mutList:
-            mutID = '_'.join([strucid, mut])
-            commands = ['../foldx -f %s/%s/config_repairPDB.cfg' % (serverDataDir, mutID),
-                        '../foldx -f %s/%s/config_pssm.cfg' % (serverDataDir, mutID)]
+    print('Writing Beluga job files')
+    if type is 'folding':
+        for struc, _ in data.items():
+            strucid = get_strucID (struc)
+            commands = ['../foldx -f %s/%s/config_repairPDB.cfg' % (serverDataDir, strucid),
+                        '../foldx -f %s/%s/config_buildModel.cfg' % (serverDataDir, strucid)]
             if extraCommands:
                 commands = extraCommands + commands
-            write_beluga_job (outDir / (mutID + '_job.sh'),
+            write_beluga_job (outDir / (strucid + '_job.sh'),
                               account = account,
                               walltime = walltime,
                               ntasks = ntasks,
@@ -630,11 +470,131 @@ def produce_beluga_foldx_jobs (mutations,
                               mem_per_cpu = mem_per_cpu,
                               outputfile = outputfile,
                               errorfile = errorfile,
-                              jobname = username + '_foldx_' + mutID,
+                              jobname = '%s_foldx_buildmodel_%s' % (username, strucid),
+                              commands = commands)
+    elif type is 'binding':
+        for struc, mutList in data.items():
+            strucid = get_strucID (struc)
+            for mut in mutList:
+                mutID = '_'.join([strucid, mut])
+                commands = ['../foldx -f %s/%s/config_repairPDB.cfg' % (serverDataDir, mutID),
+                            '../foldx -f %s/%s/config_pssm.cfg' % (serverDataDir, mutID)]
+                if extraCommands:
+                    commands = extraCommands + commands
+                write_beluga_job (outDir / (mutID + '_job.sh'),
+                                  account = account,
+                                  walltime = walltime,
+                                  ntasks = ntasks,
+                                  nodes = nodes,
+                                  ntasks_per_node = ntasks_per_node,
+                                  cpus_per_task = cpus_per_task,
+                                  mem = mem,
+                                  mem_per_cpu = mem_per_cpu,
+                                  outputfile = outputfile,
+                                  errorfile = errorfile,
+                                  jobname = '%s_foldx_pssm_%s' % (username, mutID),
+                                  commands = commands)
+    elif type is 'ppi_energy':
+        for pdbid, chainIDs in data.items():
+            struc = (pdbid,) + chainIDs
+            strucid = get_strucID (struc)
+            commands = ['../foldx -f %s/%s/config_repairPDB.cfg' % (serverDataDir, strucid),
+                        '../foldx -f %s/%s/config_analyseComplex.cfg' % (serverDataDir, strucid)]
+            if extraCommands:
+                commands = extraCommands + commands
+            write_beluga_job (outDir / (strucid + '_job.sh'),
+                              account = account,
+                              walltime = walltime,
+                              ntasks = ntasks,
+                              nodes = nodes,
+                              ntasks_per_node = ntasks_per_node,
+                              cpus_per_task = cpus_per_task,
+                              mem = mem,
+                              mem_per_cpu = mem_per_cpu,
+                              outputfile = outputfile,
+                              errorfile = errorfile,
+                              jobname = '%s_foldx_%s' % (username, strucid),
                               commands = commands)
 
-def read_foldx_results (inDir):
-    """Read mutation ∆∆G results produced by FoldX.
+def read_foldx_results (inDir, type = 'binding'):
+    """Read mutation ∆∆G results produced by FoldX commands.
+
+    Args:
+        inDir (Path): file directory containing FoldX results.
+        type (str): type of FoldX calculation; 'binding' for interface ∆∆G, 
+                    'folding' for protein folding ∆∆G, 'ppi_energy' for interaction energy.
+
+    Returns:
+        dict, dict: processed and unprocessed mutations.
+
+    """
+    if type is 'folding':
+        return read_foldx_buildmodel_results (inDir)
+    elif type is 'binding':
+        return read_foldx_pssm_results (inDir)
+    elif type is 'ppi_energy':
+        return read_foldx_analyseComplex_results (inDir)
+
+def read_foldx_buildmodel_results (inDir):
+    """Read mutation ∆∆G results produced by FoldX BuildModel command.
+
+    Args:
+        inDir (Path): file directory containing FoldX results.
+
+    Returns:
+        dict, dict: processed and unprocessed mutations.
+
+    """
+    processed, unprocessed = {}, {}
+    strucDir = os.listdir(inDir)
+    strucDir = [dir for dir in strucDir if os.path.isdir(inDir / dir)]
+    for strucID in strucDir:
+        struc = tuple((solve_pdbfile_id(strucID)).split('_'))
+        if re.match(r'\D\S\d+\D', struc[-1]):
+            struc = struc[:-1]
+        mutListFile = inDir / strucID / 'individual_list.txt'
+        with io.open(mutListFile, "r") as f:
+            mutList = list( map(str.strip, f.read().split(';')) )
+        mutList.remove('')
+        
+        resultFile = None
+        for filename in os.listdir(inDir / strucID):
+            if filename.startswith('Average'):
+                resultFile = filename
+        
+        results = []
+        if resultFile:
+            resultFile = inDir / strucID / resultFile
+            headers = ["Pdb", "SD", "total energy", "Backbone Hbond", "Sidechain Hbond",
+                       "Van der Waals", "Electrostatics", "Solvation Polar", "Solvation Hydrophobic", 
+                       "Van der Waals clashes", "entropy sidechain", "entropy mainchain", 
+                       "sloop_entropy", "mloop_entropy", "cis_bond", "torsional clash", "backbone clash", 
+                       "helix dipole", "water bridge", "disulfide", "electrostatic kon", 
+                       "partial covalent bonds", "energy Ionisation", "Entropy Complex"]
+            with io.open(resultFile, "r") as f:
+                for line in f:
+                    linesplit = list(map(str.strip, line.split('\t')))
+                    if linesplit == headers:
+                        break
+                for line in f:
+                    linesplit = list(map(str.strip, line.split('\t')))
+                    if len(linesplit) > 3:
+                        results.append(linesplit[2])
+                if len(results) == len(mutList):
+                    for mut, ddg in zip(mutList, results):
+                        processed[struc + (mut,)] = float(ddg)
+        
+        if not results:
+            if len(mutList) == 1:
+                processed[struc + (mutList.pop(),)] = 'X'
+            elif len(mutList) > 1:
+                for mut in mutList:
+                    unprocessed[struc + (mut,)] = [mut]
+    
+    return processed, unprocessed
+
+def read_foldx_pssm_results (inDir):
+    """Read mutation ∆∆G results produced by FoldX PSSM command.
 
     Args:
         inDir (Path): file directory containing FoldX results.
@@ -648,7 +608,7 @@ def read_foldx_results (inDir):
     strucDirs = [dir for dir in strucDirs if os.path.isdir(inDir / dir)]
     for strucID in strucDirs:
         strucDir = inDir / strucID
-        struc = tuple(strucID.split('_'))
+        struc = tuple((solve_pdbfile_id(strucID)).split('_'))
         if len(struc) > 3:
             struc = struc[:-1]
         
@@ -684,12 +644,51 @@ def read_foldx_results (inDir):
     
     return processed, unprocessed
 
+def read_foldx_analyseComplex_results (inDir):
+    """Read interaction energy results produced by FoldX AnalyseComplex command.
+
+    Args:
+        inDir (Path): file directory containing FoldX results.
+
+    Returns:
+        dict: processed structure interaction energies.
+
+    """
+    processed = {}
+    strucDir = os.listdir(inDir)
+    strucDir = [dir for dir in strucDir if os.path.isdir(inDir / dir)]
+    for strucID in strucDir:
+        struc = tuple((solve_pdbfile_id(strucID)).split('_'))
+        
+        resultFile = None
+        for filename in os.listdir(inDir / strucID):
+            if filename.startswith('Interaction_' + strucID) and filename.endswith('.fxout'):
+                resultFile = filename
+        
+        if resultFile:
+            resultFile = inDir / strucID / resultFile
+            firstHeaders = ["Pdb", "Group1", "Group2", "IntraclashesGroup1", 
+                               "IntraclashesGroup2", "Interaction Energy"]
+            with io.open(resultFile, "r") as f:
+                for line in f:
+                    if line.startswith('\t'.join(firstHeaders)):
+                        line = next(f, '')
+                        if line:
+                            linesplit = list(map(str.strip, line.split('\t')))
+                            if len(linesplit) > 5:
+                                processed[struc] = float(linesplit[5])
+        
+        if struc not in processed:
+            processed[struc] = 'X'
+    
+    return processed
+
 def read_protein_mutation_ddg (inPath, type = 'binding'):
     """Read protein mutation ∆∆G values from file.
 
     Args:
         inPath (Path): path to file containing mutations with ∆∆G values.
-        type (str): type of ∆∆G values, 'binding' for interface ∆∆G, 'folding' for protein folding ∆∆G.
+        type (str): type of ∆∆G values; 'binding' for interface ∆∆G, 'folding' for protein folding ∆∆G.
 
     Returns:
         dict
@@ -718,7 +717,7 @@ def read_chain_mutation_ddg (inPath, type = 'binding'):
 
     Args:
         inPath (Path): path to file containing mutations with ∆∆G values.
-        type (str): type of ∆∆G values, 'binding' for interface ∆∆G, 'folding' for protein folding ∆∆G.
+        type (str): type of ∆∆G values; 'binding' for interface ∆∆G, 'folding' for protein folding ∆∆G.
 
     Returns:
         dict
@@ -746,6 +745,7 @@ def copy_mutation_ddg (inPath1, inPath2, outPath, type = 'binding'):
         inPath1 (Path): path to file containing mutation ∆∆G values.
         inPath2 (Path): path to file containing mutations with missing ∆∆G values.
         outPath (Path): file path to save a copy of file in inPath2 with updated ∆∆G values.
+        type (str): type of ∆∆G values; 'binding' for interface ∆∆G, 'folding' for protein folding ∆∆G.
 
     """
     ddg = read_chain_mutation_ddg (inPath1, type)
@@ -758,13 +758,13 @@ def write_mutation_ddg_tofile (ddg, inPath, outPath, type = 'binding'):
         ddg (dict): mutation ∆∆G values.
         inPath (Path): path to file whose mutations will be updated with ∆∆G values.
         outPath (Path): file path to save a copy of file in inPath with updated ∆∆G values.
-        type (str): type of ∆∆G values, 'binding' for interface ∆∆G, 'folding' for protein folding ∆∆G.
+        type (str): type of ∆∆G values; 'binding' for interface ∆∆G, 'folding' for protein folding ∆∆G.
+
     """
-    
     with io.open(inPath, "r", encoding="utf-8") as f, io.open(outPath, "w") as fout:
         fout.write(f.readline().strip() + '\n')
         for line in f:
-            strsplit = list( map ( str.strip, line.split('\t') ) )
+            strsplit = list(map(str.strip, line.split('\t')))
             if len(strsplit) == 8:
                 protein, partner, pr_pos, pdbid, chainID, ch_pos, ch_mut, ch_partner = strsplit
                 if type is 'binding':
@@ -775,6 +775,23 @@ def write_mutation_ddg_tofile (ddg, inPath, outPath, type = 'binding'):
                     strsplit.append(str(ddg[k]))
             fout.write('\t'.join(map(str, strsplit)) + '\n')
 
+def write_ppi_energy_tofile (energy, inPath, outPath):
+    """Update PPI energy values in file.
+
+    Args:
+        energy (dict): PPI structure energy values.
+        inPath (Path): path to file whose PPIs will be updated with energy values.
+        outPath (Path): file path to save updated energy values.
+
+    """
+    ppis = pd.read_table (inPath, sep='\t')
+    for i, row in ppis.iterrows():
+        if row.Interaction_energy == '-':
+            k = row.Complex_ID, row.Chain_1, row.Chain_2
+            if k in energy:
+                ppis.loc[i, "Interaction_energy"] = energy[k]
+    ppis.to_csv (outPath, index=False, sep='\t')
+
 def append_mutation_ddg_files (inPath1, inPath2, outPath):
     """Append two ∆∆G files together and save to anothor file.
 
@@ -782,8 +799,8 @@ def append_mutation_ddg_files (inPath1, inPath2, outPath):
         inPath1 (Path): path to first input file.
         inPath2 (Path): path to second input file.
         outPath (Path): file path to save appended output to.
+
     """
-    
     with io.open(outPath, "w") as fout:
         with io.open(inPath1, "r", encoding="utf-8") as f1:
             fout.write(f1.readline().strip() + '\n')
@@ -793,3 +810,18 @@ def append_mutation_ddg_files (inPath1, inPath2, outPath):
             next(f2)
             for line in f2:
                 fout.write(line)
+
+def get_strucID (struc):
+    """Return structure file ID from structure, chains and mutation ID tuple.
+
+    Args:
+        strucid (tuple): structure, chains and mutation ID tuple.
+
+    Returns:
+        str: structure file ID.
+
+    """
+    if re.match(r'\D\S\d+\D', struc[-1]):
+        return pdbfile_id ('_'.join(struc[:-1])) + '_' + struc[-1]
+    else:
+        return pdbfile_id ('_'.join(struc))

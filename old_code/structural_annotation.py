@@ -4,9 +4,7 @@
 
 import os
 import io
-import sys
 import time
-import warnings
 import pickle
 import pandas as pd
 import numpy as np
@@ -28,24 +26,14 @@ from pdb_tools import (allow_pdb_downloads,
                        return_structure,
                        load_pdbtools_chain_strucRes_labels,
                        load_pdbtools_chain_sequences,
-                       valid_strucRes,
                        return_chain_sequence,
-                       structured_chain_residues,
+                       ordered_chain_residues,
                        return_chain_res_posToID,
                        return_chain_res_IDToPos,
                        get_interface_by_chainIDs)
 from energy_tools import read_protein_mutation_ddg
 
-#-----------------------------------------
-# Global variables modified by modules
-#-----------------------------------------
-
-# dictionary of chain interfaces already calculated
 known_interfaces = {}
-
-#-----------------------------------------
-# Modules
-#-----------------------------------------
 
 def load_dictionaries (chainSequenceFile = None, chainStrucResLabelFile = None):
     """Load dictionaries containing PDB chain sequence data.
@@ -271,25 +259,25 @@ def filter_chain_annotations (inPath,
         fout.write(headers + '\t' + 'Qcov' + '\t' + 'Scov' + '\n')
         headerSplit = headers.split('\t')
         numCol = len(headerSplit)
-        evalueCol = headerSplit.index('Expect')
-        QseqCol = headerSplit.index('Qseq')
-        SseqCol = headerSplit.index('Sseq')
-        QlenCol = headerSplit.index('Qlen')
-        SlenCol = headerSplit.index('Slen')
+        evaluePos = headerSplit.index('Expect')
+        QposPos = headerSplit.index('Qpos')
+        SposPos = headerSplit.index('Spos')
+        QlenPos = headerSplit.index('Qlen')
+        SlenPos = headerSplit.index('Slen')
     with io.open(inPath, "r", encoding="utf8", errors='ignore') as f, io.open(outPath, "a") as fout:
         next(f)
         for line in f:
             line = line.strip()
             linesplit = line.split('\t')
             if len(linesplit) == numCol:
-                if float(linesplit[evalueCol]) < evalue:
-                    Qseq = linesplit[QseqCol]
-                    Sseq = linesplit[SseqCol]
-                    Qcov = (len(Qseq) - Qseq.count('-')) / int(linesplit[QlenCol])
-                    Scov = (len(Sseq) - Sseq.count('-')) / int(linesplit[SlenCol])
+                if float(linesplit[evaluePos]) < evalue:
+                    Qpos = linesplit[QposPos].split(',')
+                    Spos = linesplit[SposPos].split(',')
+                    Qcov = len(Qpos) / int(linesplit[QlenPos])
+                    Scov = len(Spos) / int(linesplit[SlenPos])
                     if (Qcov >= prCov) and (Scov >= chCov):
                         fout.write('\t'.join([line, str(Qcov), str(Scov)]) + '\n')
-    remove_duplicate_chain_annotations (outPath, outPath)
+    remove_duplicate_chain_annotations(outPath, outPath)
 
 def remove_duplicate_chain_annotations (inPath, outPath):
     """Keep only one alignment for each protein-chain pair, the one with the smallest 
@@ -317,56 +305,17 @@ def filter_chain_annotations_by_protein (inPath, proteins, outPath):
     """
     with io.open(inPath, "r", errors='ignore') as f, io.open(outPath, "w") as fout:
         headers = f.readline()
-        fout.write(headers)
+        fout.write( headers )
         headerSplit = headers.strip().split('\t')
-        numCol = len(headerSplit)
+        numCol = len( headerSplit )
         queryPos = headerSplit.index('Query')
     with io.open(inPath, "r", errors='ignore') as f, io.open(outPath, "a") as fout:
         next(f)
         for line in f:
             linesplit = line.strip().split('\t')
-            if len(linesplit) == numCol:
-                if linesplit[queryPos] in proteins:
-                    fout.write(line)
-
-def single_chain_per_protein (inPath,
-                              outPath,
-                              chainSeqFile = None,
-                              chainStrucResFile = None,
-                              pdbDir = None):
-    """Keep only one chain alignment for each protein, the one with the smallest e-value,
-        and valid structured residue sequence if chain structured resdidue label file is
-        provided.
-
-    Args:
-        inPath (Path): path to tab-deleimited file containing protein-chain alignments.
-        outPath (Path): file path to save filtered alignments to.
-        chainSeqFile (Path): path to file containing dictionary of model chain sequences.
-        chainStrucResFile (Path): path to file containing dict of labels for chain sequence 
-                                    positions associated with 3D coordinates.
-        pdbDir (Path): file directory containing PDB structures.
-
-    """
-    chainMap = pd.read_table (inPath, sep='\t')
-    chainMap = chainMap.sort_values ("Expect", axis=0, ascending=True)
-    if chainSeqFile and chainStrucResFile and pdbDir:
-        load_pdbtools_chain_sequences (chainSeqFile)
-        load_pdbtools_chain_strucRes_labels (chainStrucResFile)
-        keep = pd.Series(data = False, index = chainMap.index)
-        proteins = list(set(chainMap["Query"].values))
-        n = len(proteins)
-        for k, p in enumerate(proteins):
-            sys.stdout.write('  Protein %d out of %d (%.2f%%) \r' % (k+1, n, 100*(k+1)/n))
-            sys.stdout.flush()
-            for i, c in chainMap.loc[chainMap["Query"]==p, "Subject"].iteritems():
-                pdbid, chainID = c.split('_')
-                if valid_strucRes (pdbid, chainID, pdbDir):
-                    keep[i] = True
-                    break
-        chainMap = chainMap[keep].reset_index(drop=True)
-    chainMap = chainMap.drop_duplicates (subset = "Query", keep='first')
-    chainMap = chainMap.sort_values ("Query", axis=0, ascending=True)
-    chainMap.to_csv (outPath, index=False, sep='\t')
+            if len( linesplit ) == numCol:
+                if linesplit[ queryPos ] in proteins:
+                    fout.write( line )
 
 def produce_interface_annotated_interactome (inPath,
                                              pdbDir,
@@ -387,7 +336,7 @@ def produce_interface_annotated_interactome (inPath,
     Args:
         inPath (Path): path to file containing chain-annotated interactome.
         pdbDir (Path): file directory containing pdb structures.
-        chainSeqFile (Path): path to file containing dictionary of model chain sequences.
+        chainSeqFile (Path): path to file containing dictionary of PDB chain sequences.
         chainMapFile (Path): path to tab-delimited file containing protein-chain alignments.
         interfaceFile (Path): path to file containing already calculated chain-pair interfaces.
                                 Newly calculated interfaces are added to this file.
@@ -703,6 +652,34 @@ def read_chain_interfaces (inPath):
             else:
                 known_interfaces[chainKey] = row.Chain1_interface
 
+def produce_site_annotated_interactome (inPath, outPath, cutoff = 0.5):
+    
+    interactome = read_single_interface_annotated_interactome (inPath)
+    proteins = set(interactome[["Protein_1", "Protein_2"]].values.flatten())
+    numSites = {p:0 for p in proteins}
+    sites, PPIsites = {}, []
+    for _, row in interactome.iterrows():
+        PPIsite = []
+        for protein, interface in zip((row.Protein_1, row.Protein_2), row.Interfaces):
+            overlap = False
+            for (p, site_num), (site, numPPIs) in sites.items():
+                if p == protein:
+                    overlap_1, overlap_2 = sequence_overlap (interface, site) 
+                    if (overlap_1 >= cutoff) or (overlap_2 >= cutoff):
+                        overlap = True
+                        site.extend(interface)
+                        site = list(set(site))
+                        sites[(p, site_num)] = (site, numPPIs + 1)
+                        PPIsite.append(site_num)
+                        break
+            if not overlap:
+                numSites[protein] += 1
+                sites[(protein, numSites[protein])] = (interface, 1)
+                PPIsite.append(numSites[protein])
+        PPIsites.append(PPIsite)
+    interactome["Site_1"], interactome["Site_2"] = zip(* PPIsites)
+    write_single_interface_annotated_interactome (interactome, outPath)
+
 def process_skempi_mutations (mutationFile,
                               chainSeqFile,
                               chainStrucResFile,
@@ -714,7 +691,7 @@ def process_skempi_mutations (mutationFile,
 
     Args:
         mutationFile (Path): path to SKEMPI mutations file.
-        chainSeqFile (Path): path to file containing dictionary of model chain sequences.
+        chainSeqFile (Path): path to file containing dictionary of chain sequences.
         chainStrucResFile (Path): path to file containing dict of labels for chain sequence 
                                     positions associated with 3D coordinates.
         pdbDir (Path): file directory containing PDB structures.
@@ -793,8 +770,8 @@ def process_skempi_mutations (mutationFile,
                                               "partners":partners,
                                               "protein_name":protein_names,
                                               "partner_name":partner_names,
-                                              "mut_position":positions,
-                                              "mut_res":mut_residues,
+                                              "Mutation_Position":positions,
+                                              "Mut_res":mut_residues,
                                               "chain_mutation":mut,
                                               "perturbations":perturbations,
                                               "temperature":temperatures,
@@ -805,12 +782,12 @@ def process_skempi_mutations (mutationFile,
                                               "ddg":ddg})
     expanded_mutations = expanded_mutations.drop_duplicates (subset=['protein_name',
                                                                      'partner_name',
-                                                                     'mut_position',
-                                                                     'mut_res'], keep='first')
-    expanded_mutations = expanded_mutations.drop_duplicates (subset=['protein',
+                                                                     'Mutation_Position',
+                                                                     'Mut_res'], keep='first')
+    expanded_mutations = expanded_mutations.drop_duplicates (subset=['Protein',
                                                                      'partners',
-                                                                     'mut_position',
-                                                                     'mut_res'], keep='first')
+                                                                     'Mutation_Position',
+                                                                     'Mut_res'], keep='first')
     
     print('%d out of %d mutations selected' % (len(expanded_mutations), len(mutations)))
     expanded_mutations.to_csv(outPath, index=False, sep = '\t')
@@ -865,16 +842,16 @@ def write_skempi_mutation_crystal_maps (inPath, outPath, modelddgFile = None):
                               'chain_mutation',
                               'partner_chain']) + '\n')
         for _, row in mutations.iterrows():
-            k = row.protein, row.partners, row.mut_position, row.mut_res
+            k = row.Protein, row.partners, row.Mutation_Position, row.Mut_res
             if (k in modelddg) or (not filter):
-                pdb_id, chain_id = row.protein.split('_')
+                pdb_id, chain_id = row.Protein.split('_')
                 _, partner_chain = row.partners.split('_')
-                fout.write('\t'.join([row.protein,
+                fout.write('\t'.join([row.Protein,
                                       row.partners,
-                                      str(row.mut_position),
+                                      str(row.Mutation_Position),
                                       pdb_id,
                                       chain_id,
-                                      str(row.mut_position),
+                                      str(row.Mutation_Position),
                                       row.chain_mutation,
                                       partner_chain]) + '\n')
 
@@ -894,7 +871,7 @@ def write_skempi_mutation_structure_maps (mutationFile,
         mutationFile (Path): path to file containing mutations to be mapped.
         interactomeFile (Path): path to file containing interface-annotated interactome.
         chainMapFile (Path): path to tab-delimited file containing protein-chain sequence alignments.
-        chainSeqFile (Path): path to file containing dictionary of model chain sequences.
+        chainSeqFile (Path): path to file containing dictionary of chain sequences.
         chainStrucResFile (Path): path to file containing dict of labels for chain sequence 
                                     positions associated with 3D coordinates.
         pdbDir (Path): file directory containing PDB structures.
@@ -912,6 +889,7 @@ def write_skempi_mutation_structure_maps (mutationFile,
                                    interactomeFile,
                                    chainMapFile,
                                    chainSeqFile,
+                                   chainSeqFile,
                                    chainStrucResFile,
                                    pdbDir,
                                    outPath,
@@ -923,6 +901,7 @@ def write_mutation_structure_maps (mutations,
                                    interactomeFile,
                                    chainMapFile,
                                    chainSeqFile,
+                                   proteinSeqFile,
                                    chainStrucResFile,
                                    pdbDir,
                                    outPath,
@@ -935,7 +914,8 @@ def write_mutation_structure_maps (mutations,
         mutations (DataFrame): mutations to be mapped.
         interactomeFile (Path): path to file containing interface-annotated interactome.
         chainMapFile (Path): path to tab-delimited file containing protein-chain sequence alignments.
-        chainSeqFile (Path): path to file containing dictionary of model chain sequences.
+        chainSeqFile (Path): path to file containing dictionary of chain sequences.
+        proteinSeqFile (Path): path to file containing dictionary of protein sequences.
         chainStrucResFile (Path): path to file containing dict of labels for chain sequence 
                                     positions associated with 3D coordinates.
         pdbDir (Path): file directory containing PDB structures.
@@ -978,9 +958,9 @@ def write_mutation_structure_maps (mutations,
         for i, mut in mutations.iterrows():
             print('\t' + 'mutation index: %d' % i)
             perturbing = False
-            pos = mut.mut_position
+            pos = mut.Mutation_Position
             perturbedPartners = [p for p, perturb in zip(mut.partners, mut.perturbations) if perturb > 0]
-            ppis = interactome[ (interactome[ ["Protein_1", "Protein_2"] ] == mut.protein).any(1) ]
+            ppis = interactome[ (interactome[ ["Protein_1", "Protein_2"] ] == mut.Protein).any(1) ]
             
             # go through each interaction (PPI) perturbed by the mutation
             for j, ppi in ppis.iterrows():
@@ -989,7 +969,7 @@ def write_mutation_structure_maps (mutations,
                     print('\t\t' + 'PPI # %d' % j)
                     
                     # get chain pairs (models) used to map interface for this PPI
-                    if ppi.Protein_2 == mut.protein:
+                    if ppi.Protein_2 == mut.Protein:
                         chainPairs = [tuple(reversed(x)) for x in ppi.Chain_pairs]
                         partner = ppi.Protein_1
                     else:
@@ -1002,16 +982,17 @@ def write_mutation_structure_maps (mutations,
                         (pdbid, ch1_id), (_, ch2_id) = ch1.split('_'), ch2.split('_')
                         struc = return_structure (pdbid, pdbDir)
                         if struc:
+                            model = struc[0]
                             # get structured residues that are part of the chain SEQRES
-                            residues = structured_chain_residues (pdbid, ch1_id, pdbDir)
+                            residues = ordered_chain_residues (pdbid, model, ch1_id, pdbDir)
                             if residues:
                                 # map mutation position back onto chain pair (model) through sequence alignment
-                                mappings = mutation_structure_map (chainMap, mut.protein, ch1, pos)
+                                mappings = mutation_structure_map (chainMap, mut.Protein, ch1, pos)
                                 # if mutation position maps through any protein-chain alignment 
                                 if mappings is not None:
                                     # make sure chain wildtype residue is different than mutation residue
                                     mappings["chainRes"] = mappings["posMaps"].apply(lambda x: return_chain_sequence(ch1)[x-1])
-                                    mappings = mappings[mappings["chainRes"] != mut.mut_res]
+                                    mappings = mappings[mappings["chainRes"] != mut.Mut_res]
                                     if check_interface:
                                         k = ch1 + '-' + ch2
                                         interfacial = mappings["posMaps"].apply(lambda x: x in known_interfaces[k]
@@ -1026,7 +1007,7 @@ def write_mutation_structure_maps (mutations,
                                         if resID:
                                             # write mutation structure mapping to file
                                             _, resNum, _ = resID
-                                            fout.write('\t'.join([mut.protein,
+                                            fout.write('\t'.join([mut.Protein,
                                                                   partner,
                                                                   str(pos),
                                                                   pdbid,
@@ -1035,7 +1016,7 @@ def write_mutation_structure_maps (mutations,
                                                                   ''.join([chainRes,
                                                                            ch1_id,
                                                                            str(resNum),
-                                                                           mut.mut_res]),
+                                                                           mut.Mut_res]),
                                                                   ch2_id]) +  '\n')
                                             print('\t\t\t' + 'mutation mapping writen to file')
                                             mapped = True
@@ -1119,31 +1100,3 @@ def is_cocrystal (protein, chain, chainMap):
         return True
     else:
         return False
-
-def produce_site_annotated_interactome (inPath, outPath, cutoff = 0.5):
-    
-    interactome = read_single_interface_annotated_interactome (inPath)
-    proteins = set(interactome[["Protein_1", "Protein_2"]].values.flatten())
-    numSites = {p:0 for p in proteins}
-    sites, PPIsites = {}, []
-    for _, row in interactome.iterrows():
-        PPIsite = []
-        for protein, interface in zip((row.Protein_1, row.Protein_2), row.Interfaces):
-            overlap = False
-            for (p, site_num), (site, numPPIs) in sites.items():
-                if p == protein:
-                    overlap_1, overlap_2 = sequence_overlap (interface, site) 
-                    if (overlap_1 >= cutoff) or (overlap_2 >= cutoff):
-                        overlap = True
-                        site.extend(interface)
-                        site = list(set(site))
-                        sites[(p, site_num)] = (site, numPPIs + 1)
-                        PPIsite.append(site_num)
-                        break
-            if not overlap:
-                numSites[protein] += 1
-                sites[(protein, numSites[protein])] = (interface, 1)
-                PPIsite.append(numSites[protein])
-        PPIsites.append(PPIsite)
-    interactome["Site_1"], interactome["Site_2"] = zip(* PPIsites)
-    write_single_interface_annotated_interactome (interactome, outPath)

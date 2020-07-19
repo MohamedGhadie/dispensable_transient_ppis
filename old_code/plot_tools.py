@@ -2,8 +2,8 @@
 # Modules for plotting.
 #----------------------------------------------------------------------------------------
 
-#import matplotlib
-#matplotlib.use('Agg')
+# import matplotlib
+# matplotlib.use('Agg')
 import os
 import numpy as np
 import networkx as nx
@@ -33,7 +33,6 @@ def bar_plot (data,
               ylim = None,
               xticks = None,
               yMinorTicks = False,
-              bottom = 0,
               adjustBottom = False,
               shiftBottomAxis = None,
               xbounds = None,
@@ -63,7 +62,6 @@ def bar_plot (data,
         ylim (list): limits for y-axis.
         xticks (list): x-tick position.
         yMinorTicks (numeric): number of minor ticks between two major ticks on y-axis.
-        bottom (list): y coordinate(s) of the bar bases.
         adjustBottom (boolean) = True if bottom margin of figure needs adjustment.
         shiftBottomAxis (numeric) = shift x-axis by this much.
         xbounds (list): chop off x-axis beyond these bounds.
@@ -84,7 +82,6 @@ def bar_plot (data,
     ph.bar(ind,
            data,
            barwidth,
-           bottom = bottom,
            color = colors,
            alpha = opacity,
            edgecolor = edgecolor)
@@ -916,8 +913,8 @@ def network_plot (edges,
     edges = g.edges()
     nodes = g.nodes()
     edgeColors = [g[u][v]['color'] for u,v in edges]
-    nodeSizes = [g.nodes[u]['size'] for u in nodes]
-    nodeColors = [g.nodes[u]['color'] for u in nodes]
+    nodeSizes = [g.node[u]['size'] for u in nodes]
+    nodeColors = [g.node[u]['color'] for u in nodes]
     pos = {'graphviz': graphviz_layout(g),
            'spring': nx.spring_layout(g),
            'shell': nx.shell_layout(g),

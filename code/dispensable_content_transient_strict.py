@@ -42,7 +42,7 @@ def main():
     minPoints = 5
     
     # maximum co-expression level (not inclusive) for transient PPIs
-    maxCoexpr = 0.05
+    maxCoexpr = 0.1
     
     # calculate confidence interval for the fraction of dispensable PPIs
     computeConfidenceIntervals = True
@@ -143,7 +143,8 @@ def main():
                                    uniprotIDmapFile,
                                    geoDir,
                                    proteinExprFile,
-                                   numPoints = 5)
+                                   numPoints = 5,
+                                   avg = 'all')
     
     with open(proteinExprFile, 'rb') as f:
         expr = pickle.load(f)

@@ -457,7 +457,8 @@ def produce_geo_expr_dict (inPath,
                            uniprotIDmapFile,
                            gdsDir,
                            outPath,
-                           numPoints = 1):
+                           numPoints = 1,
+                           avg = 'none'):
     
     with open(uniprotIDmapFile, 'rb') as f:
         uniprotID = pickle.load(f)
@@ -474,15 +475,27 @@ def produce_geo_expr_dict (inPath,
         
         gds = read_gds_softfile (id, inDir = gdsDir)
         if gds:
-            samples = []
-            for subset in gds.subsets.values():
-                if tm in subset.metadata['type']:
-                    samples.extend(subset.metadata['sample_id'][0].split(','))
-            samples = list(set(samples))
+            sampleIDs = []
+            if avg == 'none':
+                for subset in gds.subsets.values():
+                    if tm in subset.metadata['type']:
+                        sampleIDs.extend(subset.metadata['sample_id'][0].split(','))
+                sampleIDs = list(set(sampleIDs))
+                exprTable = gds.table[["IDENTIFIER"] + sampleIDs]
+            elif avg == 'all':
+                k = 0
+                exprTable = pd.DataFrame(data = {"IDENTIFIER":gds.table["IDENTIFIER"].values})
+                for subset in gds.subsets.values():
+                    if tm in subset.metadata['type']:
+                        k += 1
+                        meanSampleID = 'Mean_' + str(k)
+                        sampleIDs.append(meanSampleID)
+                        samples = subset.metadata['sample_id'][0].split(',')
+                        exprTable[meanSampleID] = gds.table[samples].mean(axis=1).values
         
-            genes = list(set(gds.table["IDENTIFIER"].values))
+            genes = list(set(exprTable["IDENTIFIER"].values))
             for gene in genes:
-                e = gds.table.loc[gds.table["IDENTIFIER"] == gene, samples]
+                e = exprTable.loc[exprTable["IDENTIFIER"] == gene, sampleIDs]
                 g = gene.upper()
                 if g in uniprotID:
                     p = uniprotID[g]
@@ -518,9 +531,25 @@ def is_transient (p1,
                                              minPts = minPts,
                                              maxCoexpr = maxCoexpr,
                                              singleExp = True))
-        if 'transient' in all:
+#         if 'transient' in all:
+#             return 'transient'
+#         elif 'permanent' in all:
+#             return 'permanent'
+#         else:
+#             return '-'
+            
+#         if 'permanent' in all:
+#             return 'permanent'
+#         elif 'transient' in all:
+#             return 'transient'
+#         else:
+#             return '-'
+        
+        numTran = all.count('transient')
+        numPerm = all.count('permanent')
+        if numTran > numPerm:
             return 'transient'
-        elif 'permanent' in all:
+        elif (numPerm > 0) and (numTran <= numPerm):
             return 'permanent'
         else:
             return '-'
