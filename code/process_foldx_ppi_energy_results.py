@@ -24,10 +24,10 @@ def main():
     inDir = interactomeDir / 'foldx' / 'results'
     
     # input files
-    energyFile = interactomeDir / 'ppi_energy_foldx.txt'
+    energyFile = interactomeDir / 'ppi_template_energy_foldx.txt'
     
     # temporary output file
-    tempFile = interactomeDir / 'ppi_energy_foldx_2.txt'
+    tempFile = interactomeDir / 'ppi_energy_foldx_temp.txt'
     
     # create output directories if not existing
     if not interactomeDir.exists():

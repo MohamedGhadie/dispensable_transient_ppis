@@ -11,6 +11,43 @@ from pathlib import Path
 from text_tools import write_beluga_job
 from pdb_tools import pdbfile_id, solve_pdbfile_id, clear_structures, write_partial_structure
 
+def produce_initial_ppi_energy_file (inPath, outPath):
+    """Write initial PPI structure interaction energy file with no energy values.
+
+    Args:
+        inPath (Path): path to file containing structural interactome.
+        outPath (Path): path to output energy file.
+
+    """
+    ppis = pd.read_table (inPath, sep='\t')
+    ppis["Interaction_energy"] = '-'
+    chain_1, chain_2 = zip(* ppis["Chain_pairs"].apply(lambda x: x.split('+')).values)
+    ppis["Chain_1"] = [c.split('_')[1] for c in chain_1]
+    ppis["Chain_2"] = [c.split('_')[1] for c in chain_2] 
+    ppis[["Protein_1", "Protein_2", "Complex_ID", "Chain_1", "Chain_2", "Interaction_energy"]
+        ].to_csv (outPath, index=False, sep='\t')
+
+def produce_initial_ppi_template_energy_file (inPath, outPath):
+    """Write initial PPI template interaction energy file with no energy values.
+
+    Args:
+        inPath (Path): path to file containing structural interactome.
+        outPath (Path): path to output energy file.
+
+    """
+    ppis = pd.read_table (inPath, sep='\t')
+    ppis["Interaction_energy"], ppis["Chain_1"], ppis["Chain_2"] = '-', '-', '-'
+    for i, row in ppis.iterrows():
+        complexID, templateID = solve_pdbfile_id(row.Alignment_file_ID).split('_')
+        p1, p2 = complexID.split('=')
+        pdbid, c1, c2 = templateID.split('-')
+        mapping = {p1:c1, p2:c2}
+        ppis.loc[i, "Complex_ID"] = pdbid
+        ppis.loc[i, "Chain_1"] = mapping[row.Protein_1]
+        ppis.loc[i, "Chain_2"] = mapping[row.Protein_2] 
+    ppis[["Protein_1", "Protein_2", "Complex_ID", "Chain_1", "Chain_2", "Interaction_energy"]
+        ].to_csv (outPath, index=False, sep='\t')
+
 def read_unprocessed_ddg_mutations (inPath, type = 'binding'):
     """Read PDB chain mutations with missing ∆∆G values from file.
 
@@ -56,15 +93,14 @@ def read_unprocessed_energy_ppis (inPath):
         inPath (Path): path to file containing PPI structure energy values.
 
     Returns:
-        dict
+        list
 
     """
     ppis = pd.read_table (inPath, sep='\t')
     ppis = ppis[ppis["Interaction_energy"] == '-']
-    structures = {strucID: (c1, c2) for strucID, c1, c2 in ppis[["Complex_ID",
-                                                                 "Chain_1",
-                                                                 "Chain_2"]].values}
-    return structures
+    structures = {(strucID,) + tuple(sorted([c1, c2]))
+                    for strucID, c1, c2 in ppis[["Complex_ID", "Chain_1", "Chain_2"]].values}
+    return list(structures)
 
 def produce_foldx_and_beluga_jobs (data,
                                    pdbDir,
@@ -87,7 +123,8 @@ def produce_foldx_and_beluga_jobs (data,
     """Produce jobs for the FoldX method for ∆∆G calculations using several commands.
 
     Args:
-        data (dict): either mutations or chain pairs associated with each structure.
+        data (dict or list): dict of mutations associated with each structure, or list of
+                             structure-chain triplets.
         pdbDir (Path): file directory containing PDB structures.
         outDir (Path): file directory to save FoldX data files and Beluga jobs to.
         type (str): type of FoldX calculation; 'binding' for interface ∆∆G, 
@@ -199,8 +236,8 @@ def produce_foldx_buildmodel_jobs (mutations, pdbDir, outDir, parameters = None)
     for i, (struc, mutList) in enumerate(mutations):
         sys.stdout.write('  Structure %d out of %d (%.2f%%) \r' % (i+1, n, 100*(i+1)/n))
         sys.stdout.flush()
-        strucid = get_strucID (struc)
-        strucDir = outDir / strucid
+        strucFileID = strucfile_id (struc)
+        strucDir = outDir / strucFileID
         if not strucDir.exists():
             os.makedirs(strucDir)
         mutListFile = strucDir / 'individual_list.txt'
@@ -212,22 +249,22 @@ def produce_foldx_buildmodel_jobs (mutations, pdbDir, outDir, parameters = None)
         write_partial_structure (pdbid,
                                  [chainID],
                                  pdbDir,
-                                 strucDir / (strucid + '.pdb'))
+                                 strucDir / (strucFileID + '.pdb'))
         write_foldx_config (strucDir / 'config_repairPDB.cfg',
                             'RepairPDB',
-                            pdb_dir = '../data/%s' % strucid,
-                            output_dir = '../data/%s' % strucid,
-                            pdb_file = '%s.pdb' % strucid)
+                            pdb_dir = '../data/%s' % strucFileID,
+                            output_dir = '../data/%s' % strucFileID,
+                            pdb_file = '%s.pdb' % strucFileID)
         mutParam = {k:v for k, v in default_param.items()}
         if struc in parameters:
             for k, v in parameters[struc].items():
                 mutParam[k] = v
         write_foldx_config (strucDir / 'config_buildModel.cfg',
                             'BuildModel',
-                            pdb_dir = '../data/%s' % strucid,
-                            output_dir = '../data/%s' % strucid,
-                            pdb_file = '%s_Repair.pdb' % strucid,
-                            mutant_file = '../data/%s/individual_list.txt' % strucid,
+                            pdb_dir = '../data/%s' % strucFileID,
+                            output_dir = '../data/%s' % strucFileID,
+                            pdb_file = '%s_Repair.pdb' % strucFileID,
+                            mutant_file = '../data/%s/individual_list.txt' % strucFileID,
                             temp = mutParam['temp'],
                             ph = mutParam['ph'],
                             ionStrength = mutParam['ionStrength'],
@@ -263,22 +300,22 @@ def produce_foldx_pssm_jobs (mutations, pdbDir, outDir, parameters = None):
     for i, (struc, mutList) in enumerate(mutations):
         sys.stdout.write('  Structure %d out of %d (%.2f%%) \r' % (i+1, n, 100*(i+1)/n))
         sys.stdout.flush()
-        strucid = get_strucID (struc)
+        strucFileID = strucfile_id (struc)
         pdbid, chainID1, chainID2 = struc[:3]
         for mut in mutList:
-            mutID = '_'.join([strucid, mut])
+            mutID = '_'.join([strucFileID, mut])
             mutDir = outDir / mutID
             if not mutDir.exists():
                 os.makedirs(mutDir)
             write_partial_structure (pdbid,
                                      [chainID1, chainID2],
                                      pdbDir,
-                                     mutDir / (strucid + '.pdb'))
+                                     mutDir / (strucFileID + '.pdb'))
             write_foldx_config (mutDir / 'config_repairPDB.cfg',
                                 'RepairPDB',
                                 pdb_dir = '../data/%s' % mutID,
                                 output_dir = '../data/%s' % mutID,
-                                pdb_file = '%s.pdb' % strucid)
+                                pdb_file = '%s.pdb' % strucFileID)
             mutParam = {k:v for k, v in default_param.items()}
             if (struc, mut) in parameters:
                 for k, v in parameters[(struc, mut)].items():
@@ -290,7 +327,7 @@ def produce_foldx_pssm_jobs (mutations, pdbDir, outDir, parameters = None):
                                              'positions=%sa' % mut[:-1]],
                                 pdb_dir = '../data/%s' % mutID,
                                 output_dir = '../data/%s' % mutID,
-                                pdb_file = '%s_Repair.pdb' % strucid,
+                                pdb_file = '%s_Repair.pdb' % strucFileID,
                                 temp = mutParam['temp'],
                                 ph = mutParam['ph'],
                                 ionStrength = mutParam['ionStrength'],
@@ -302,7 +339,7 @@ def produce_foldx_analyseComplex_jobs (structures, pdbDir, outDir, parameters = 
     """Produce jobs for the FoldX interaction energy calculation using AnalyseComplex command.
 
     Args:
-        structures (dict): chain letters associated with each structure ID.
+        structures (list): tuples of structure ID and chain letters.
         pdbDir (Path): file directory containing PDB structures.
         outDir (Path): file directory to save FoldX jobs to.
         parameters (dict): parameters used for each FoldX job, otherwise default.
@@ -322,27 +359,25 @@ def produce_foldx_analyseComplex_jobs (structures, pdbDir, outDir, parameters = 
     
     n = len(structures)
     print('Writing FoldX AnalyseComplex files:')
-    for i, (pdbid, chainIDs) in enumerate(structures.items()):
+    for i, (pdbid, chainID1, chainID2) in enumerate(structures):
         sys.stdout.write('  Structure %d out of %d (%.2f%%) \r' % (i+1, n, 100*(i+1)/n))
         sys.stdout.flush()
-        
-        chainID1, chainID2 = chainIDs
         struc = pdbid, chainID1, chainID2
-        strucID = get_strucID (struc)
-        strucDir = outDir / strucID
+        strucFileID = strucfile_id (struc)
+        strucDir = outDir / strucFileID
         if not strucDir.exists():
             os.makedirs(strucDir)
         
         write_partial_structure (pdbid,
                                  [chainID1, chainID2],
                                  pdbDir,
-                                 strucDir / (strucID + '.pdb'))
+                                 strucDir / (strucFileID + '.pdb'))
         
         write_foldx_config (strucDir / 'config_repairPDB.cfg',
                             'RepairPDB',
-                            pdb_dir = '../data/%s' % strucID,
-                            output_dir = '../data/%s' % strucID,
-                            pdb_file = '%s.pdb' % strucID)
+                            pdb_dir = '../data/%s' % strucFileID,
+                            output_dir = '../data/%s' % strucFileID,
+                            pdb_file = '%s.pdb' % strucFileID)
         
         strucParam = {k:v for k, v in default_param.items()}
         if struc in parameters:
@@ -352,9 +387,9 @@ def produce_foldx_analyseComplex_jobs (structures, pdbDir, outDir, parameters = 
         write_foldx_config (strucDir / 'config_analyseComplex.cfg',
                             'AnalyseComplex',
                             other_cmd = ['analyseComplexChains=%s,%s' % (chainID1, chainID2)],
-                            pdb_dir = '../data/%s' % strucID,
-                            output_dir = '../data/%s' % strucID,
-                            pdb_file = '%s_Repair.pdb' % strucID,
+                            pdb_dir = '../data/%s' % strucFileID,
+                            output_dir = '../data/%s' % strucFileID,
+                            pdb_file = '%s_Repair.pdb' % strucFileID,
                             temp = strucParam['temp'],
                             ph = strucParam['ph'],
                             ionStrength = strucParam['ionStrength'],
@@ -429,7 +464,8 @@ def produce_beluga_foldx_jobs (data,
         See https://docs.computecanada.ca/wiki/Béluga/en
 
     Args:
-        data (dict): either mutations or chain pairs associated with each structure.
+        data (dict or list): dict of mutations associated with each structure, or list of
+                             structure-chain triplets.
         type (str): type of FoldX calculation; 'binding' for interface ∆∆G, 
                     'folding' for protein folding ∆∆G, 'ppi_energy' for interaction energy.
         outDir (Path): file directory to save jobs to.
@@ -454,12 +490,12 @@ def produce_beluga_foldx_jobs (data,
     print('Writing Beluga job files')
     if type is 'folding':
         for struc, _ in data.items():
-            strucid = get_strucID (struc)
-            commands = ['../foldx -f %s/%s/config_repairPDB.cfg' % (serverDataDir, strucid),
-                        '../foldx -f %s/%s/config_buildModel.cfg' % (serverDataDir, strucid)]
+            strucFileID = strucfile_id (struc)
+            commands = ['../foldx -f %s/%s/config_repairPDB.cfg' % (serverDataDir, strucFileID),
+                        '../foldx -f %s/%s/config_buildModel.cfg' % (serverDataDir, strucFileID)]
             if extraCommands:
                 commands = extraCommands + commands
-            write_beluga_job (outDir / (strucid + '_job.sh'),
+            write_beluga_job (outDir / (strucFileID + '_job.sh'),
                               account = account,
                               walltime = walltime,
                               ntasks = ntasks,
@@ -470,13 +506,13 @@ def produce_beluga_foldx_jobs (data,
                               mem_per_cpu = mem_per_cpu,
                               outputfile = outputfile,
                               errorfile = errorfile,
-                              jobname = '%s_foldx_buildmodel_%s' % (username, strucid),
+                              jobname = '%s_foldx_buildmodel_%s' % (username, strucFileID),
                               commands = commands)
     elif type is 'binding':
         for struc, mutList in data.items():
-            strucid = get_strucID (struc)
+            strucFileID = strucfile_id (struc)
             for mut in mutList:
-                mutID = '_'.join([strucid, mut])
+                mutID = '_'.join([strucFileID, mut])
                 commands = ['../foldx -f %s/%s/config_repairPDB.cfg' % (serverDataDir, mutID),
                             '../foldx -f %s/%s/config_pssm.cfg' % (serverDataDir, mutID)]
                 if extraCommands:
@@ -495,14 +531,13 @@ def produce_beluga_foldx_jobs (data,
                                   jobname = '%s_foldx_pssm_%s' % (username, mutID),
                                   commands = commands)
     elif type is 'ppi_energy':
-        for pdbid, chainIDs in data.items():
-            struc = (pdbid,) + chainIDs
-            strucid = get_strucID (struc)
-            commands = ['../foldx -f %s/%s/config_repairPDB.cfg' % (serverDataDir, strucid),
-                        '../foldx -f %s/%s/config_analyseComplex.cfg' % (serverDataDir, strucid)]
+        for struc in data:
+            strucFileID = strucfile_id (struc)
+            commands = ['../foldx -f %s/%s/config_repairPDB.cfg' % (serverDataDir, strucFileID),
+                        '../foldx -f %s/%s/config_analyseComplex.cfg' % (serverDataDir, strucFileID)]
             if extraCommands:
                 commands = extraCommands + commands
-            write_beluga_job (outDir / (strucid + '_job.sh'),
+            write_beluga_job (outDir / (strucFileID + '_job.sh'),
                               account = account,
                               walltime = walltime,
                               ntasks = ntasks,
@@ -513,7 +548,7 @@ def produce_beluga_foldx_jobs (data,
                               mem_per_cpu = mem_per_cpu,
                               outputfile = outputfile,
                               errorfile = errorfile,
-                              jobname = '%s_foldx_%s' % (username, strucid),
+                              jobname = '%s_foldx_%s' % (username, strucFileID),
                               commands = commands)
 
 def read_foldx_results (inDir, type = 'binding'):
@@ -548,23 +583,23 @@ def read_foldx_buildmodel_results (inDir):
     processed, unprocessed = {}, {}
     strucDir = os.listdir(inDir)
     strucDir = [dir for dir in strucDir if os.path.isdir(inDir / dir)]
-    for strucID in strucDir:
-        struc = tuple((solve_pdbfile_id(strucID)).split('_'))
+    for strucFileID in strucDir:
+        struc = tuple((solve_pdbfile_id(strucFileID)).split('_'))
         if re.match(r'\D\S\d+\D', struc[-1]):
             struc = struc[:-1]
-        mutListFile = inDir / strucID / 'individual_list.txt'
+        mutListFile = inDir / strucFileID / 'individual_list.txt'
         with io.open(mutListFile, "r") as f:
             mutList = list( map(str.strip, f.read().split(';')) )
         mutList.remove('')
         
         resultFile = None
-        for filename in os.listdir(inDir / strucID):
+        for filename in os.listdir(inDir / strucFileID):
             if filename.startswith('Average'):
                 resultFile = filename
         
         results = []
         if resultFile:
-            resultFile = inDir / strucID / resultFile
+            resultFile = inDir / strucFileID / resultFile
             headers = ["Pdb", "SD", "total energy", "Backbone Hbond", "Sidechain Hbond",
                        "Van der Waals", "Electrostatics", "Solvation Polar", "Solvation Hydrophobic", 
                        "Van der Waals clashes", "entropy sidechain", "entropy mainchain", 
@@ -606,9 +641,9 @@ def read_foldx_pssm_results (inDir):
     processed, unprocessed = {}, {}
     strucDirs = os.listdir(inDir)
     strucDirs = [dir for dir in strucDirs if os.path.isdir(inDir / dir)]
-    for strucID in strucDirs:
-        strucDir = inDir / strucID
-        struc = tuple((solve_pdbfile_id(strucID)).split('_'))
+    for strucFileID in strucDirs:
+        strucDir = inDir / strucFileID
+        struc = tuple((solve_pdbfile_id(strucFileID)).split('_'))
         if len(struc) > 3:
             struc = struc[:-1]
         
@@ -657,16 +692,16 @@ def read_foldx_analyseComplex_results (inDir):
     processed = {}
     strucDir = os.listdir(inDir)
     strucDir = [dir for dir in strucDir if os.path.isdir(inDir / dir)]
-    for strucID in strucDir:
-        struc = tuple((solve_pdbfile_id(strucID)).split('_'))
+    for strucFileID in strucDir:
+        struc = tuple((solve_pdbfile_id(strucFileID)).split('_'))
         
         resultFile = None
-        for filename in os.listdir(inDir / strucID):
-            if filename.startswith('Interaction_' + strucID) and filename.endswith('.fxout'):
+        for filename in os.listdir(inDir / strucFileID):
+            if filename.startswith('Interaction_' + strucFileID) and filename.endswith('.fxout'):
                 resultFile = filename
         
         if resultFile:
-            resultFile = inDir / strucID / resultFile
+            resultFile = inDir / strucFileID / resultFile
             firstHeaders = ["Pdb", "Group1", "Group2", "IntraclashesGroup1", 
                                "IntraclashesGroup2", "Interaction Energy"]
             with io.open(resultFile, "r") as f:
@@ -787,7 +822,7 @@ def write_ppi_energy_tofile (energy, inPath, outPath):
     ppis = pd.read_table (inPath, sep='\t')
     for i, row in ppis.iterrows():
         if row.Interaction_energy == '-':
-            k = row.Complex_ID, row.Chain_1, row.Chain_2
+            k = tuple([row.Complex_ID] + sorted([row.Chain_1, row.Chain_2]))
             if k in energy:
                 ppis.loc[i, "Interaction_energy"] = energy[k]
     ppis.to_csv (outPath, index=False, sep='\t')
@@ -811,11 +846,11 @@ def append_mutation_ddg_files (inPath1, inPath2, outPath):
             for line in f2:
                 fout.write(line)
 
-def get_strucID (struc):
+def strucfile_id (struc):
     """Return structure file ID from structure, chains and mutation ID tuple.
 
     Args:
-        strucid (tuple): structure, chains and mutation ID tuple.
+        struc (tuple): structure, chains and mutation ID tuple.
 
     Returns:
         str: structure file ID.

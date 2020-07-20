@@ -3,6 +3,7 @@
 #----------------------------------------------------------------------------------------
 
 import os
+import numpy as np
 import pandas as pd
 from pathlib import Path
 from plot_tools import multi_histogram_plot
@@ -35,12 +36,20 @@ def main():
         os.makedirs(figDir)
     
     ppis = pd.read_table (energyFile, sep='\t')
-    print('Average energy = %f' % ppis["Interaction_energy"].mean())
-    multi_histogram_plot (ppis["Interaction_energy"].values,
+    
+    energy = {}
+    for _, ppi in ppis.iterrows():
+        energy[(ppi.Complex_ID,) + tuple(sorted([ppi.Chain_1, ppi.Chain_2]))] = ppi.Interaction_energy
+    
+    values = list(energy.values())
+    print('Unique structures = %d' % len(energy))
+    print('Average energy = %f' % np.mean(values))
+    print(sum([i <= 0 for i in values]))
+    multi_histogram_plot (values,
                           xlabel = 'Interaction energy',
                           ylabel = 'Number of PPIs',
                           bins = 25,
-                          fontsize = 24,
+                          fontsize = 16,
                           show = showFigs,
                           figdir = figDir,
                           figname = 'ppi_energy_histogram')

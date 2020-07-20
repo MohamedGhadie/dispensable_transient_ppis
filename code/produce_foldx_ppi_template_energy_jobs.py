@@ -1,12 +1,12 @@
 #----------------------------------------------------------------------------------------
-# Produce jobs for PPI structures to be submitted to FoldX for interaction energy 
+# Produce jobs for PPI template structures to be submitted to FoldX for interaction energy 
 # calculations. Each job contains only one PPI. PPIs with known energy values in the 
 # input file are skipped.
 #----------------------------------------------------------------------------------------
 
 import os
 from pathlib import Path
-from energy_tools import (produce_initial_ppi_energy_file,
+from energy_tools import (produce_initial_ppi_template_energy_file,
                           read_unprocessed_energy_ppis,
                           produce_foldx_and_beluga_jobs)
 
@@ -26,24 +26,23 @@ def main():
     
     # directory of ppi structural models
     #modelDir = interactomeDir / 'ppi_models'
-    modelDir = Path('/Volumes/MG_Samsung/edgotype_fitness_effect_full_model/data/processed/' +
-                    interactome_name + '/model_based/ppi_models')
+    modelDir = Path('/Volumes/MG_Samsung/pdb_files')
     
     # directory of foldx output jobs
     outDir = interactomeDir / 'foldx'
     
-    # input file containing mutations to submit to foldx
+    # input data files
     interactomeFile = interactomeDir / 'structural_interactome.txt'
     
-    # output files
-    energyFile = interactomeDir / 'ppi_energy_foldx.txt'
+    # output data files
+    energyFile = interactomeDir / 'ppi_template_energy_foldx.txt'
     
     # create output directories if not existing
     if not outDir.exists():
         os.makedirs(outDir)
     
     if not energyFile.is_file():
-        produce_initial_ppi_energy_file (interactomeFile, energyFile)
+        produce_initial_ppi_template_energy_file (interactomeFile, energyFile)
     
     ppiStructures = read_unprocessed_energy_ppis (energyFile)
     
