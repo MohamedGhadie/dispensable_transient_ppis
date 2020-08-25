@@ -3,16 +3,13 @@
 #----------------------------------------------------------------------------------------
 
 import io
-import os
 import time
 import pickle
-import subprocess
 import pandas as pd
 import numpy as np
 import copy as cp
 from pathlib import Path
 from Bio import Seq, SeqIO
-from random import sample
 
 def parse_IntAct_interactions (inPath,
                                spListFile,

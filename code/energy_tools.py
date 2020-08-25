@@ -810,23 +810,6 @@ def write_mutation_ddg_tofile (ddg, inPath, outPath, type = 'binding'):
                     strsplit.append(str(ddg[k]))
             fout.write('\t'.join(map(str, strsplit)) + '\n')
 
-def write_ppi_energy_tofile (energy, inPath, outPath):
-    """Update PPI energy values in file.
-
-    Args:
-        energy (dict): PPI structure energy values.
-        inPath (Path): path to file whose PPIs will be updated with energy values.
-        outPath (Path): file path to save updated energy values.
-
-    """
-    ppis = pd.read_table (inPath, sep='\t')
-    for i, row in ppis.iterrows():
-        if row.Interaction_energy == '-':
-            k = tuple([row.Complex_ID] + sorted([row.Chain_1, row.Chain_2]))
-            if k in energy:
-                ppis.loc[i, "Interaction_energy"] = energy[k]
-    ppis.to_csv (outPath, index=False, sep='\t')
-
 def append_mutation_ddg_files (inPath1, inPath2, outPath):
     """Append two ∆∆G files together and save to anothor file.
 
@@ -845,6 +828,54 @@ def append_mutation_ddg_files (inPath1, inPath2, outPath):
             next(f2)
             for line in f2:
                 fout.write(line)
+
+def copy_ppi_energy (inPath1, inPath2, outPath):
+
+    energy = read_ppi_chain_energy (inPath1, fails = True)
+    write_ppi_energy_tofile (energy, inPath2, outPath)
+
+def write_ppi_energy_tofile (energy, inPath, outPath):
+    """Update PPI energy values in file.
+
+    Args:
+        energy (dict): PPI structure energy values.
+        inPath (Path): path to file whose PPIs will be updated with energy values.
+        outPath (Path): file path to save updated energy values.
+
+    """
+    ppis = pd.read_table (inPath, sep='\t')
+    for i, row in ppis.iterrows():
+        if row.Interaction_energy == '-':
+            k = tuple([row.Complex_ID] + sorted([row.Chain_1, row.Chain_2]))
+            if k in energy:
+                ppis.loc[i, "Interaction_energy"] = energy[k]
+    ppis.to_csv (outPath, index=False, sep='\t')
+
+def read_ppi_energy (inPath, fails = False):
+
+    ppis = pd.read_table (inPath, sep='\t')
+    energy = {}
+    for _, ppi in ppis.iterrows():
+        if ppi.Interaction_energy != '-':
+            k = tuple(sorted([ppi.Protein_1, ppi.Protein_2]))
+            if ppi.Interaction_energy != 'X':
+                energy[k] = float(ppi.Interaction_energy)
+            elif fails:
+                energy[k] = 'X'
+    return energy
+
+def read_ppi_chain_energy (inPath, fails = False):
+
+    ppis = pd.read_table (inPath, sep='\t')
+    energy = {}
+    for _, ppi in ppis.iterrows():
+        if ppi.Interaction_energy != '-':
+            k = tuple([ppi.Complex_ID] + sorted([ppi.Chain_1, ppi.Chain_2]))
+            if ppi.Interaction_energy != 'X':
+                energy[k] = float(ppi.Interaction_energy)
+            elif fails:
+                energy[k] = 'X'
+    return energy
 
 def strucfile_id (struc):
     """Return structure file ID from structure, chains and mutation ID tuple.

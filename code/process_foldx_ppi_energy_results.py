@@ -9,7 +9,7 @@ from energy_tools import read_foldx_results, write_ppi_energy_tofile
 def main():
     
     # reference interactome name: HI-II-14, HuRI, IntAct
-    interactome_name = 'HuRI'
+    interactome_name = 'IntAct'
     
     # parent directory of all data files
     dataDir = Path('../data')
@@ -23,8 +23,8 @@ def main():
     # directory of foldx results
     inDir = interactomeDir / 'foldx' / 'results'
     
-    # input files
-    energyFile = interactomeDir / 'ppi_template_energy_foldx.txt'
+    # output data files
+    energyFile = interactomeDir / 'ppi_energy_foldx.txt'
     
     # temporary output file
     tempFile = interactomeDir / 'ppi_energy_foldx_temp.txt'

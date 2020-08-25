@@ -8,14 +8,12 @@ import numpy as np
 from pathlib import Path
 from text_tools import read_list_table, write_list_table
 from perturbation_tools import (unique_perturbation_mutations,
-                                num_permanent_ppis_perturbed,
-                                num_transient_ppis_perturbed)
+                                num_balanced_ppis_perturbed,
+                                num_unbalanced_ppis_perturbed)
 from protein_function import (produce_illumina_expr_dict,
                               produce_gtex_expr_dict,
-                              produce_hpa_expr_dict,
                               produce_fantom5_expr_dict,
-                              produce_geo_expr_dict,
-                              is_transient)
+                              is_unbalanced)
 from stat_tools import fisher_test, sderror_on_fraction
 from math_tools import fitness_effect
 from plot_tools import curve_plot
@@ -34,15 +32,17 @@ def main():
     unique_edgetics = False
     
     # gene expression database name
-    # options: Illumina, GTEx, HPA, Fantom5, GEO
-    expr_db = 'GEO'
+    # options: Illumina, GTEx, Fantom5
+    expr_db = 'Fantom5'
     
-    # minimum number of expression point values required for protein pair tissue
-    # co-expression to be considered
-    minPoints = 5
+    # minimum number of expression point values required for protein pair 
+    # expression ratios to be considered
+    minPoints = 1
     
-    # maximum co-expression level (not inclusive) for transient PPIs
-    maxCoexpr = 0.1
+    logBase = 10
+    
+    # minimum mean log difference in expression for unbalanced PPIs
+    minDiff = 0.6
     
     # calculate confidence interval for the fraction of dispensable PPIs
     computeConfidenceIntervals = True
@@ -62,7 +62,7 @@ def main():
     # Probability for strongly detrimental mutations (S) to be edgetic (E)
     pE_S = 0
     
-    pN_E_keys = ['Permanent PPIs', 'Transient PPIs']
+    pN_E_keys = ['Balanced PPIs', 'Unbalanced PPIs']
     
     pN_E, conf = {}, {}
     
@@ -85,13 +85,13 @@ def main():
     figDir = Path('../figures') / interactome_name
     
     # input data files
-    illuminaExprFile = extDir / 'E-MTAB-513.tsv.txt'
+    illuminaExprFile = extDir / 'E-MTAB-513-query-results.tsv'
     gtexDir = extDir / 'GTEx_Analysis_v7_eQTL_expression_matrices'
-    hpaExprFile = extDir / 'normal_tissue.tsv'
+    #hpaExprFile = extDir / 'normal_tissue.tsv'
     fantomExprFile = extDir / 'hg38_fair+new_CAGE_peaks_phase1and2_tpm_ann.osc.txt'
     fantomSampleTypeFile = extDir / 'fantom5_sample_type.xlsx'
-    geoDir = extDir / 'GEO' / 'datasets'
-    gdsTypeFile = procDir / 'gds_subset_type.txt'
+    #geoDir = extDir / 'GEO' / 'datasets'
+    #gdsTypeFile = procDir / 'gds_subset_type.txt'
     uniprotIDmapFile = procDir / 'to_human_uniprotID_map.pkl'
     uniqueGeneSwissProtIDFile = procDir / 'uniprot_unique_gene_reviewed_human_proteome.list'
     naturalMutationsFile = interactomeDir / 'nondisease_mutation_edgetics.txt'
@@ -125,10 +125,6 @@ def main():
                                     uniprotIDmapFile,
                                     proteinExprFile,
                                     uniprotIDlistFile = uniqueGeneSwissProtIDFile)
-        elif expr_db is 'HPA':
-            produce_hpa_expr_dict (hpaExprFile,
-                                   uniprotIDmapFile,
-                                   proteinExprFile)
         elif expr_db is 'Fantom5':
             produce_fantom5_expr_dict (fantomExprFile,
                                        uniprotIDmapFile,
@@ -136,21 +132,9 @@ def main():
                                        sampleTypes = 'tissues',
                                        sampleTypeFile = fantomSampleTypeFile,
                                        uniprotIDlistFile = uniqueGeneSwissProtIDFile)
-        elif expr_db is 'GEO':
-            produce_geo_expr_dict (gdsTypeFile,
-                                   uniprotIDmapFile,
-                                   geoDir,
-                                   proteinExprFile,
-                                   numPoints = 5,
-                                   avg = 'all')
     
     with open(proteinExprFile, 'rb') as f:
         expr = pickle.load(f)
-    
-    if expr_db is 'HPA':
-        exprMap = {'Not detected':0, 'Low':1, 'Medium':2, 'High':3}
-        for k, v in expr.items():
-            expr[k] = np.array([(exprMap[e] if e in exprMap else np.nan) for e in v])
     
     #------------------------------------------------------------------------------------
     # Load interactome perturbations
@@ -187,67 +171,38 @@ def main():
     
     #------------------------------------------------------------------------------------
     
-    singleExp = False if expr_db is 'GEO' else True
+    if expr_db is 'GTEx':
+        logBase = None
+    naturalMutations ["expr_balance"] = naturalMutations.apply (lambda x: 
+                                                                [is_unbalanced (x["protein"],
+                                                                                p,
+                                                                                expr,
+                                                                                minPts = minPoints,
+                                                                                logBase = logBase,
+                                                                                minDiff = minDiff)
+                                                                 for p in x["partners"]], axis=1)
     
-    naturalMutations ["transient_PPIs"] = naturalMutations.apply (lambda x: 
-                                                                  [is_transient (x["protein"],
-                                                                                 p,
-                                                                                 expr,
-                                                                                 minPts = minPoints,
-                                                                                 maxCoexpr = maxCoexpr,
-                                                                                 singleExp = singleExp)
-                                                                   for p in x["partners"]], axis=1)
-    diseaseMutations ["transient_PPIs"] = diseaseMutations.apply (lambda x: 
-                                                                  [is_transient (x["protein"],
-                                                                                 p,
-                                                                                 expr,
-                                                                                 minPts = minPoints,
-                                                                                 maxCoexpr = maxCoexpr,
-                                                                                 singleExp = singleExp)
-                                                                   for p in x["partners"]], axis=1)
+    diseaseMutations ["expr_balance"] = diseaseMutations.apply (lambda x: 
+                                                                [is_unbalanced (x["protein"],
+                                                                                p,
+                                                                                expr,
+                                                                                minPts = minPoints,
+                                                                                logBase = logBase,
+                                                                                minDiff = minDiff)
+                                                                 for p in x["partners"]], axis=1)
     
-    write_list_table (naturalMutations, ["partners", "perturbations", "transient_PPIs"], natMutOutFile)
-    write_list_table (diseaseMutations, ["partners", "perturbations", "transient_PPIs"], disMutOutFile)
+    write_list_table (naturalMutations, ["partners", "perturbations", "expr_balance"], natMutOutFile)
+    write_list_table (diseaseMutations, ["partners", "perturbations", "expr_balance"], disMutOutFile)
     
-    natMut_numPermPerturbs = naturalMutations.apply(
-        lambda x: num_permanent_ppis_perturbed (x["perturbations"], x["transient_PPIs"]), axis=1)
-    disMut_numPermPerturbs = diseaseMutations.apply(
-        lambda x: num_permanent_ppis_perturbed (x["perturbations"], x["transient_PPIs"]), axis=1)
-    natMut_numTransPerturbs = naturalMutations.apply(
-        lambda x: num_transient_ppis_perturbed (x["perturbations"], x["transient_PPIs"]), axis=1)
-    disMut_numTransPerturbs = diseaseMutations.apply(
-        lambda x: num_transient_ppis_perturbed (x["perturbations"], x["transient_PPIs"]), axis=1)
-    
-#     naturalMutations ["num_transient_perturbed_ppis"] = naturalMutations.apply(lambda x:
-#                                                         num_transient_perturbed_ppis (x["protein"],
-#                                                                                       x["partners"],
-#                                                                                       x["perturbations"],
-#                                                                                       expr,
-#                                                                                       minTissues = minTissues,
-#                                                                                       maxCoexpr = maxCoexpr), axis=1)
-#     diseaseMutations ["num_transient_perturbed_ppis"] = diseaseMutations.apply(lambda x:
-#                                                         num_transient_perturbed_ppis (x["protein"],
-#                                                                                       x["partners"],
-#                                                                                       x["perturbations"],
-#                                                                                       expr,
-#                                                                                       minTissues = minTissues,
-#                                                                                       maxCoexpr = maxCoexpr), axis=1)
-#     
-#     naturalMutations ["num_permanent_perturbed_ppis"] = naturalMutations.apply(lambda x:
-#                                                         num_permanent_perturbed_ppis (x["protein"],
-#                                                                                       x["partners"],
-#                                                                                       x["perturbations"],
-#                                                                                       expr,
-#                                                                                       minTissues = minTissues,
-#                                                                                       minCoexpr = maxCoexpr), axis=1)
-#     diseaseMutations ["num_permanent_perturbed_ppis"] = diseaseMutations.apply(lambda x:
-#                                                         num_permanent_perturbed_ppis (x["protein"],
-#                                                                                       x["partners"],
-#                                                                                       x["perturbations"],
-#                                                                                       expr,
-#                                                                                       minTissues = minTissues,
-#                                                                                       minCoexpr = maxCoexpr), axis=1)
-    
+    natMut_numBalancedPerturbs = naturalMutations.apply(
+        lambda x: num_balanced_ppis_perturbed (x["perturbations"], x["expr_balance"]), axis=1)
+    disMut_numBalancedPerturbs = diseaseMutations.apply(
+        lambda x: num_balanced_ppis_perturbed (x["perturbations"], x["expr_balance"]), axis=1)
+    natMut_numUnbalancedPerturbs = naturalMutations.apply(
+        lambda x: num_unbalanced_ppis_perturbed (x["perturbations"], x["expr_balance"]), axis=1)
+    disMut_numUnbalancedPerturbs = diseaseMutations.apply(
+        lambda x: num_unbalanced_ppis_perturbed (x["perturbations"], x["expr_balance"]), axis=1)
+        
     #------------------------------------------------------------------------------------
     # Dispensable content among all PPIs
     #------------------------------------------------------------------------------------
@@ -300,19 +255,19 @@ def main():
                                   output = True)
     
     #------------------------------------------------------------------------------------
-    # Dispensable content among permanent PPIs
+    # Dispensable content among balanced PPIs
     #------------------------------------------------------------------------------------
     
     if mono_edgetic:
         numNaturalMut_edgetic = sum((naturalMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (natMut_numPermPerturbs > 0))
+                                    (natMut_numBalancedPerturbs > 0))
         numDiseaseMut_edgetic = sum((diseaseMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (disMut_numPermPerturbs > 0))
+                                    (disMut_numBalancedPerturbs > 0))
     else:
         numNaturalMut_edgetic = sum((naturalMutations["edgotype"] == 'edgetic') &
-                                    (natMut_numPermPerturbs > 0))
+                                    (natMut_numBalancedPerturbs > 0))
         numDiseaseMut_edgetic = sum((diseaseMutations["edgotype"] == 'edgetic') &
-                                    (disMut_numPermPerturbs > 0))
+                                    (disMut_numBalancedPerturbs > 0))
     
     numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
     numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic
@@ -321,7 +276,7 @@ def main():
     numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
     
     print('\n********************************************************************')
-    print('Dispensable content among permanent PPIs:')
+    print('Dispensable content among balanced PPIs:')
     print('********************************************************************\n')
     
     label = 'monoedgetic' if mono_edgetic else 'edgetic'
@@ -355,29 +310,29 @@ def main():
                                   output = True)
     
     if 'P(N|E)' in all_effects:
-        pN_E['Permanent PPIs'] = 100 * all_effects['P(N|E)']
+        pN_E['Balanced PPIs'] = 100 * all_effects['P(N|E)']
         if 'P(N|E)_CI' in all_effects:
             lower, upper = all_effects['P(N|E)_CI']
-            conf['Permanent PPIs'] = 100 * lower, 100 * upper
+            conf['Balanced PPIs'] = 100 * lower, 100 * upper
     
     #------------------------------------------------------------------------------------
-    # Dispensable content among transient PPIs
+    # Dispensable content among unbalanced PPIs
     #------------------------------------------------------------------------------------
     
     if mono_edgetic:
         numNaturalMut_edgetic = sum((naturalMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (natMut_numPermPerturbs == 0) &
-                                    (natMut_numTransPerturbs > 0))
+                                    (natMut_numBalancedPerturbs == 0) &
+                                    (natMut_numUnbalancedPerturbs > 0))
         numDiseaseMut_edgetic = sum((diseaseMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (disMut_numPermPerturbs == 0) &
-                                    (disMut_numTransPerturbs > 0))
+                                    (disMut_numBalancedPerturbs == 0) &
+                                    (disMut_numUnbalancedPerturbs > 0))
     else:
         numNaturalMut_edgetic = sum((naturalMutations["edgotype"] == 'edgetic') & 
-                                    (natMut_numPermPerturbs == 0) &
-                                    (natMut_numTransPerturbs > 0))
+                                    (natMut_numBalancedPerturbs == 0) &
+                                    (natMut_numUnbalancedPerturbs > 0))
         numDiseaseMut_edgetic = sum((diseaseMutations["edgotype"] == 'edgetic') & 
-                                    (disMut_numPermPerturbs == 0) &
-                                    (disMut_numTransPerturbs > 0))
+                                    (disMut_numBalancedPerturbs == 0) &
+                                    (disMut_numUnbalancedPerturbs > 0))
     
     numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
     numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic
@@ -386,7 +341,7 @@ def main():
     numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
     
     print('\n********************************************************************')
-    print('Dispensable content among transient PPIs:')
+    print('Dispensable content among unbalanced PPIs:')
     print('********************************************************************\n')
     
     label = 'monoedgetic' if mono_edgetic else 'edgetic'
@@ -420,10 +375,10 @@ def main():
                                   output = True)
     
     if 'P(N|E)' in all_effects:
-        pN_E['Transient PPIs'] = 100 * all_effects['P(N|E)']
+        pN_E['Unbalanced PPIs'] = 100 * all_effects['P(N|E)']
         if 'P(N|E)_CI' in all_effects:
             lower, upper = all_effects['P(N|E)_CI']
-            conf['Transient PPIs'] = 100 * lower, 100 * upper
+            conf['Unbalanced PPIs'] = 100 * lower, 100 * upper
     
     #------------------------------------------------------------------------------------
     # Plot dispensable PPI content
@@ -456,7 +411,7 @@ def main():
                 xbounds = (1, 2),
                 show = showFigs,
                 figdir = figDir,
-                figname = 'Fraction_disp_PPIs_transient_%s' % expr_db)
+                figname = 'Fraction_disp_PPIs_unbalanced_%s' % expr_db)
 
 if __name__ == "__main__":
     main()

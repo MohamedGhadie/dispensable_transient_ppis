@@ -84,6 +84,113 @@ def coexpr (p1, p2, expr, minPts = 3, method = 'pearson_corr'):
                 return 1 - hamming_dist (e1, e2) / numPts
     return np.nan
 
+def expr_ratio (p1, p2, expr, minPts = 1, method = 'mean'):
+    """Calculate expression ratio for two proteins across multiple experiments.
+
+    Args:
+        p1 (str): protein 1 ID.
+        p2 (str): protein 2 ID.
+        expr (dict): dictionary containing expression values for each protein.
+        minPts (int): 
+        method (str): method used to merge expression ratio from all experiments.
+    
+    Returns:
+        float
+    
+    """
+    if (p1 in expr) and (p2 in expr):
+        e1, e2 = expr[p1], expr[p2]
+        not_nan = (np.isnan(e1) == False) & (np.isnan(e2) == False)
+        e1, e2 = e1[not_nan], e2[not_nan]
+        not_zero = (e1 > 0) & (e2 > 0)
+        if sum(not_zero) >= minPts:
+            e1, e2 = e1[not_zero], e2[not_zero]
+            if method is 'mean':
+                ratio = np.true_divide(e1, e2)
+                ratio = [max(r, 1/r) for r in ratio] 
+                logRatio = list(map(np.log10, ratio))
+                return np.mean(logRatio)
+    return np.nan
+
+def expr_log_diff (p1, p2, expr, minPts = 1, logBase = 10, method = 'mean'):
+    """Calculate expression ratio for two proteins across multiple experiments.
+
+    Args:
+        p1 (str): protein 1 ID.
+        p2 (str): protein 2 ID.
+        expr (dict): dictionary containing expression values for each protein.
+        minPts (int): minimum number of defined expression points required.
+        logBase (numeric): base value for log transformation.
+        method (str): method used to merge expression ratio from all experiments.
+    
+    Returns:
+        float
+    
+    """
+    if (p1 in expr) and (p2 in expr):
+        e1, e2 = expr[p1], expr[p2]
+        not_nan = (np.isnan(e1) == False) & (np.isnan(e2) == False)
+        e1, e2 = e1[not_nan], e2[not_nan]
+        if logBase:
+            not_zero = (e1 > 0) & (e2 > 0)
+            e1, e2 = e1[not_zero], e2[not_zero]
+            e1 = np.log10(e1) / np.log10(logBase)
+            e2 = np.log10(e2) / np.log10(logBase)
+        if len(e1) >= minPts:
+            if method is 'mean':
+                return np.mean(np.abs(e1 - e2))
+    return np.nan
+
+def expr_ratio2 (p1, p2, expr, minPts = 1, method = 'mean'):
+    """Calculate expression ratio for two proteins across multiple experiments.
+
+    Args:
+        p1 (str): protein 1 ID.
+        p2 (str): protein 2 ID.
+        expr (dict): dictionary containing expression values for each protein.
+        minPts (int): 
+        method (str): method used to merge expression ratio from all experiments.
+    
+    Returns:
+        float
+    
+    """
+    if (p1 in expr) and (p2 in expr):
+        e1, e2 = expr[p1], expr[p2]
+        not_nan = (np.isnan(e1) == False) & (np.isnan(e2) == False)
+        if sum(not_nan) >= minPts:
+            e1, e2 = e1[not_nan], e2[not_nan]
+            if method is 'mean':
+                return np.mean(np.abs(e1 - e2))
+    return np.nan
+
+def expr_ratio_symbolic (p1,
+                         p2,
+                         expr,
+                         minPts = 1,
+                         values = None,
+                         high = None,
+                         method = 'majority'):
+    
+    if not values:
+        values = ['Low', 'Medium', 'High']
+    if not high:
+        high = [{'Low', 'High'}]
+    
+    if (p1 in expr) and (p2 in expr):
+        expr1, expr2 = np.array(expr[p1]), np.array(expr[p2])
+        valid = [(e1 in values) and (e2 in values) for e1, e2 in zip(expr1, expr2)]
+        if sum(valid) >= minPts:
+            expr1, expr2 = expr1[valid], expr2[valid]
+            if method is 'majority':
+                ratio = []
+                for e1, e2 in zip(expr1, expr2):
+                    ratio.append('high' if {e1, e2} in high else 'low')
+                numHigh, numLow = ratio.count('high'), ratio.count('low')
+                if (numHigh + numLow) >= minPts:
+                    return 'high' if numHigh >= numLow else 'low'
+    return '-'
+
 def produce_protein_go_dictionaries (inPath,
                                      GO_outPath,
                                      MF_outPath,
@@ -274,7 +381,8 @@ def produce_illumina_expr_dict (inPath,
     for _, row in expr.iterrows():
        if row[headers[0]] in uniprotID:
             id = uniprotID[row[headers[0]]]
-            e[id] = np.log2(np.array([row[k] for k in headers[1:]]))
+            #e[id] = np.log2(np.array([row[k] for k in headers[1:]]))
+            e[id] = np.array([row[k] for k in headers[1:]])
     with open(outPath, 'wb') as fOut:
         pickle.dump(e, fOut)
 
@@ -553,3 +661,32 @@ def is_transient (p1,
             return 'permanent'
         else:
             return '-'
+
+def is_weak (p1, p2, energy, minEnergy = -20):
+    
+    ppi = tuple(sorted([p1, p2]))
+    if ppi in energy:
+        return 'weak' if energy[ppi] >= minEnergy else 'strong'
+    else:
+        return '-'
+
+def is_unbalanced (p1,
+                   p2,
+                   expr,
+                   minPts = 1,
+                   logBase = 10,
+                   minDiff = 10):
+
+    meanDiff = expr_log_diff (p1,
+                              p2,
+                              expr,
+                              minPts = minPts,
+                              logBase = logBase,
+                              method = 'mean')
+    
+    if np.isnan(meanDiff):
+        return '-'
+    elif meanDiff >= minDiff:
+        return 'unbalanced'
+    else:
+        return 'balanced'

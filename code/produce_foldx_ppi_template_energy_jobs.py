@@ -13,7 +13,7 @@ from energy_tools import (produce_initial_ppi_template_energy_file,
 def main():
     
     # reference interactome name: HI-II-14, HuRI, IntAct
-    interactome_name = 'HuRI'
+    interactome_name = 'IntAct'
     
     # parent directory of all data files
     dataDir = Path('../data')

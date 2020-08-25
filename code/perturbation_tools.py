@@ -140,3 +140,19 @@ def num_simult (protein, partners, simultaneous):
         else:
             num_simult.append(np.nan)
     return num_simult
+
+def num_weak_ppis_perturbed (perturbs, strength):
+    
+    return sum([s == 'weak' for p, s in zip(perturbs, strength) if p > 0])
+
+def num_strong_ppis_perturbed (perturbs, strength):
+    
+    return sum([s == 'strong' for p, s in zip(perturbs, strength) if p > 0])
+
+def num_unbalanced_ppis_perturbed (perturbs, balance):
+    
+    return sum([b == 'unbalanced' for p, b in zip(perturbs, balance) if p > 0])
+
+def num_balanced_ppis_perturbed (perturbs, balance):
+    
+    return sum([b == 'balanced' for p, b in zip(perturbs, balance) if p > 0])
