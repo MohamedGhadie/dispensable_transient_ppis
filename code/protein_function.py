@@ -53,7 +53,7 @@ def go_sim (p1, p2, goAssoc):
     else:
         return np.nan
 
-def coexpr (p1, p2, expr, minPts = 3, method = 'pearson_corr'):
+def coexpr (p1, p2, expr, minPts = 3, method = 'pearson_corr', singleExp = True):
     """Calculate tissue co-expression for two proteins.
 
     Args:
@@ -65,27 +65,46 @@ def coexpr (p1, p2, expr, minPts = 3, method = 'pearson_corr'):
         method (str): method used to calculate coexpression. Set to 'pearson_corr' to return 
                         Pearson's correlation coefficient, or 'hamming_dist' to return 
                         1 - hamming_distance / length of valid columns.
+        singleExp (bool): set to False if protein expression dictionary has multiple 
+                            expression datasets per protein. In this case, the mean of 
+                            coexpression across all datasets is returned.
     
     Returns:
         float
     
     """
-    if (p1 in expr) and (p2 in expr):
-        e1, e2 = expr[p1], expr[p2]
-        not_nan = (np.isnan(e1) == False) & (np.isnan(e2) == False)
-        numPts = sum(not_nan)
-        if numPts >= minPts:
-            e1, e2 = e1[not_nan], e2[not_nan]
-            if method is 'pearson_corr':
-                if (len(set(e1)) > 1) and (len(set(e2)) > 1):
-                    corr, p = pearsonr(e1, e2)
-                    return corr
-            elif method is 'hamming_dist':
-                return 1 - hamming_dist (e1, e2) / numPts
+    if singleExp:
+        if (p1 in expr) and (p2 in expr):
+            e1, e2 = expr[p1], expr[p2]
+            not_nan = (np.isnan(e1) == False) & (np.isnan(e2) == False)
+            numPts = sum(not_nan)
+            if numPts >= minPts:
+                e1, e2 = e1[not_nan], e2[not_nan]
+                if method is 'pearson_corr':
+                    if (len(set(e1)) > 1) and (len(set(e2)) > 1):
+                        corr, p = pearsonr(e1, e2)
+                        return corr
+                elif method is 'hamming_dist':
+                    return 1 - hamming_dist (e1, e2) / numPts
+    else:
+        all = []
+        if (p1 in expr) and (p2 in expr):
+            for dataset in expr[p1]:
+                if dataset in expr[p2]:
+                    subExpr = {p1:expr[p1][dataset], p2:expr[p2][dataset]}
+                    all.append(coexpr (p1,
+                                       p2,
+                                       subExpr,
+                                       minPts = minPts,
+                                       method = method,
+                                       singleExp = True))
+            all = [c for c in all if not np.isnan(c)]
+            if all:
+                return np.mean(all)
     return np.nan
 
 def expr_ratio (p1, p2, expr, minPts = 1, method = 'mean'):
-    """Calculate expression ratio for two proteins across multiple experiments.
+    """Calculate the log of expression ratio for two proteins across multiple experiments.
 
     Args:
         p1 (str): protein 1 ID.
@@ -113,20 +132,7 @@ def expr_ratio (p1, p2, expr, minPts = 1, method = 'mean'):
     return np.nan
 
 def expr_log_diff (p1, p2, expr, minPts = 1, logBase = 10, method = 'mean'):
-    """Calculate expression ratio for two proteins across multiple experiments.
 
-    Args:
-        p1 (str): protein 1 ID.
-        p2 (str): protein 2 ID.
-        expr (dict): dictionary containing expression values for each protein.
-        minPts (int): minimum number of defined expression points required.
-        logBase (numeric): base value for log transformation.
-        method (str): method used to merge expression ratio from all experiments.
-    
-    Returns:
-        float
-    
-    """
     if (p1 in expr) and (p2 in expr):
         e1, e2 = expr[p1], expr[p2]
         not_nan = (np.isnan(e1) == False) & (np.isnan(e2) == False)
@@ -137,29 +143,6 @@ def expr_log_diff (p1, p2, expr, minPts = 1, logBase = 10, method = 'mean'):
             e1 = np.log10(e1) / np.log10(logBase)
             e2 = np.log10(e2) / np.log10(logBase)
         if len(e1) >= minPts:
-            if method is 'mean':
-                return np.mean(np.abs(e1 - e2))
-    return np.nan
-
-def expr_ratio2 (p1, p2, expr, minPts = 1, method = 'mean'):
-    """Calculate expression ratio for two proteins across multiple experiments.
-
-    Args:
-        p1 (str): protein 1 ID.
-        p2 (str): protein 2 ID.
-        expr (dict): dictionary containing expression values for each protein.
-        minPts (int): 
-        method (str): method used to merge expression ratio from all experiments.
-    
-    Returns:
-        float
-    
-    """
-    if (p1 in expr) and (p2 in expr):
-        e1, e2 = expr[p1], expr[p2]
-        not_nan = (np.isnan(e1) == False) & (np.isnan(e2) == False)
-        if sum(not_nan) >= minPts:
-            e1, e2 = e1[not_nan], e2[not_nan]
             if method is 'mean':
                 return np.mean(np.abs(e1 - e2))
     return np.nan
@@ -617,7 +600,7 @@ def produce_geo_expr_dict (inPath,
 def is_transient (p1,
                   p2,
                   expr,
-                  minPts = 5,
+                  minPts = 3,
                   maxCoexpr = 0.05,
                   singleExp = True):
     
@@ -639,20 +622,6 @@ def is_transient (p1,
                                              minPts = minPts,
                                              maxCoexpr = maxCoexpr,
                                              singleExp = True))
-#         if 'transient' in all:
-#             return 'transient'
-#         elif 'permanent' in all:
-#             return 'permanent'
-#         else:
-#             return '-'
-            
-#         if 'permanent' in all:
-#             return 'permanent'
-#         elif 'transient' in all:
-#             return 'transient'
-#         else:
-#             return '-'
-        
         numTran = all.count('transient')
         numPerm = all.count('permanent')
         if numTran > numPerm:
