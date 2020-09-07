@@ -15,9 +15,11 @@ def main():
     
     # gene expression database name
     # options: Illumina, GTEx, Fantom5
-    expr_db = 'Illumina'
+    expr_db = 'Fantom5'
     
-    logScale = True
+    normalize = True
+    
+    logScale = False
     
     zeroRange = np.inf
     
@@ -45,7 +47,10 @@ def main():
     uniqueGeneSwissProtIDFile = procDir / 'uniprot_unique_gene_reviewed_human_proteome.list'
     
     # output data files
-    proteinExprFile = procDir / ('protein_expr_%s.pkl' % expr_db)
+    if (expr_db is 'GTEx') or normalize:
+        proteinExprFile = procDir / ('protein_expr_norm_%s.pkl' % expr_db)
+    else:
+        proteinExprFile = procDir / ('protein_expr_%s.pkl' % expr_db)
     
     # create output directories if not existing
     if not figDir.exists():
@@ -62,6 +67,7 @@ def main():
             produce_illumina_expr_dict (illuminaExprFile,
                                         uniprotIDmapFile,
                                         proteinExprFile,
+                                        normalize = normalize,
                                         headers = list(range(1, 18)))
         elif expr_db is 'GTEx':
             produce_gtex_expr_dict (gtexDir,
@@ -72,6 +78,7 @@ def main():
             produce_fantom5_expr_dict (fantomExprFile,
                                        uniprotIDmapFile,
                                        proteinExprFile,
+                                       normalize = normalize,
                                        sampleTypes = 'tissues',
                                        sampleTypeFile = fantomSampleTypeFile,
                                        uniprotIDlistFile = uniqueGeneSwissProtIDFile)
@@ -92,7 +99,7 @@ def main():
     #allexpr = [e for e in values[12000] if not np.isnan(e)]
 #     allexpr = [e[0] for e in values if not np.isnan(e[0])]
     allexpr = [e for e in allexpr if not np.isnan(e)]
-    if (expr_db is not 'GTEx') and logScale:
+    if (expr_db is not 'GTEx') and (not normalize) and logScale:
         allexpr = [np.log10(e) for e in allexpr if e > 0]
     
     print()
@@ -115,12 +122,12 @@ def main():
         print('SD = %g' % np.std(allexpr))
         print('Range = (%g, %g)' % (min(allexpr), max(allexpr)))
         
-    if (expr_db is not 'GTEx') and logScale:
+    if (expr_db is 'GTEx') or normalize:
+        figname = 'protein_expr_histogram_norm'
+    elif logScale:
         figname = 'protein_expr_histogram_log10'
-        fs = 16
     else:
         figname = 'protein_expr_histogram'
-        fs = 10
     
     if zeroRange < np.inf:
         figname = figname + '_range'
@@ -129,7 +136,7 @@ def main():
                           xlabel = 'Expression level',
                           ylabel = 'Frequency',
                           bins = 200,
-                          fontsize = fs,
+                          fontsize = 16,
                           show = showFigs,
                           figdir = figDir,
                           figname = figname + '_' + expr_db)

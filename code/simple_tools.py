@@ -5,7 +5,7 @@
 import os
 import re
 from pathlib import Path
-from random import choice
+from random import choices, sample
 
 def valid_uniprot_id(s):
     """Check if a string is a valid UniProt accession ID.
@@ -352,22 +352,37 @@ def merge_list_pairs (ls):
         elm2.extend(e2)
     return sorted(set(elm1)), sorted(set(elm2))
 
-def sample_random_pairs (ls, N):
-    """Generate a list of random pairs sampled with replacement from a list of elements.
-        Elements of each pair are non-identical.
+def sample_random_pairs (ls, N, replacement = True, selfPair = False):
+    """Generate a list of random pairs sampled from a list of elements.
 
     Args:
         ls (list): elements to sample pairs from.
         N (int): number of pairs to sample.
+        replacement (bool): if True, sample with replacement.
+        selfPair (bool): if True, include pairs of single protein.
 
     Returns:
         list
 
     """
-    pairs, n = [], 0
-    while n < N:
-        p1, p2 = choice(ls), choice(ls)
-        if p1 != p2:
-            pairs.append((p1, p2))
-            n += 1
-    return pairs
+#     pairs, n = [], 0
+#     while n < N:
+#         p1, p2 = choice(ls), choice(ls)
+#         if selfPair or (p1 != p2):
+#             if replacement:
+#                 pairs.append((p1, p2))
+#                 n += 1
+#             elif ((p1,p2) not in pairs) and ((p2,p1) not in pairs):
+#                 pairs.append((p1, p2))
+#                 n += 1
+#     return pairs
+    
+    if selfPair:
+        all = [(p1, p2) for i, p1 in enumerate(ls) for p2 in ls[i:]]
+    else:
+        all = [(p1, p2) for i, p1 in enumerate(ls) for p2 in ls[i+1:]]
+    
+    if replacement:
+        return choices (all, k = N)
+    else:
+        return sample (all, k = N)

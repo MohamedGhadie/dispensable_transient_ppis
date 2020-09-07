@@ -14,10 +14,6 @@ from plot_tools import curve_plot
 
 def main():
     
-    # set to True to plot dispensable PPI content using fraction of mono-edgetic mutations 
-    # instead of edgetic mutations
-    mono_edgetic = False
-    
     # reference interactome names
     interactome_names = ['HuRI', 'IntAct', 'experiment']
     
@@ -65,6 +61,7 @@ def main():
     else:
         maxY = max(pN_E_results)
     maxY = 5 * np.ceil(maxY / 5)
+    maxY = 30
     curve_plot (pN_E_results,
                 error = pN_E_bounds if plotConfidenceIntervals else None,
                 xlim = [0.8, numInteractomes + 0.1],
@@ -78,7 +75,7 @@ def main():
                 yMinorTicks = 4,
                 xticks = list(np.arange(1, numInteractomes + 1)),
                 xticklabels = struc_interactome_names,
-                yticklabels = list(np.arange(0, maxY + 5, 5)),
+                yticklabels = list(np.arange(0, maxY + 5, 10)),
                 fontsize = 20,
                 adjustBottom = 0.2,
                 shiftBottomAxis = -0.1,

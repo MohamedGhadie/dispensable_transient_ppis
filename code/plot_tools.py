@@ -249,7 +249,7 @@ def multi_bar_plot (data,
             for pos, d, err, ecol in zip(ind, d, error, ecolor):
                 ph.errorbar(pos,
                             d,
-                            yerr = err,
+                            yerr = np.transpose([err]),
                             elinewidth = ewidth,
                             fmt = fmt,
                             markersize = msize,

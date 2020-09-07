@@ -9,12 +9,13 @@ from pathlib import Path
 from perturbation_tools import unique_perturbation_mutations
 from stat_tools import fisher_test, sderror_on_fraction
 from math_tools import fitness_effect
+from plot_tools import pie_plot
 
 def main():
     
     # reference interactome name
     # options: HuRI, IntAct
-    interactome_name = 'HuRI'
+    interactome_name = 'IntAct'
     
     # set to True to calculate dispensable PPI content using fraction of mono-edgetic mutations 
     # instead of all edgetic mutations
@@ -28,6 +29,9 @@ def main():
     
     # % confidence interval
     CI = 95
+    
+    # show figures
+    showFigs = False
     
     # Probability for new missense mutations to be neutral (N)
     pN = 0.27
@@ -50,6 +54,9 @@ def main():
     # directory of processed data files specific to interactome
     interactomeDir = procDir / interactome_name
     
+    # figure directory
+    figDir = Path('../figures') / interactome_name
+    
     # input data files
     naturalMutationsFile = interactomeDir / 'nondisease_mutation_edgetics.txt'
     diseaseMutationsFile = interactomeDir / 'disease_mutation_edgetics.txt'
@@ -60,6 +67,8 @@ def main():
     # create output directories if not existing
     if not interactomeDir.exists():
         os.makedirs(interactomeDir)
+    if not figDir.exists():
+        os.makedirs(figDir)
     
     #------------------------------------------------------------------------------------
     # Load mutation edgotypes
@@ -135,6 +144,21 @@ def main():
     
     fisher_test ([numNaturalMut_edgetic, numNaturalMut_nonedgetic],
                  [numDiseaseMut_edgetic, numDiseaseMut_nonedgetic])
+    
+    pie_plot ([numNaturalMut_nonedgetic, numNaturalMut_edgetic],
+              angle = 90,
+              colors = ['mediumslateblue', 'red'],
+              edgewidth = 2,
+              show = showFigs,
+              figdir = figDir,
+              figname = 'nondisease_mutations_%s' % label)
+    pie_plot ([numDiseaseMut_nonedgetic, numDiseaseMut_edgetic],
+              angle=90,
+              colors = ['mediumslateblue', 'red'],
+              edgewidth = 2,
+              show = showFigs,
+              figdir = figDir,
+              figname = 'disease_mutations_%s' % label)
     
     print()
     all_effects = fitness_effect (pN,

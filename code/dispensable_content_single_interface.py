@@ -4,6 +4,7 @@
 
 import os
 import io
+import pickle
 import numpy as np
 from pathlib import Path
 from text_tools import read_list_table
@@ -11,7 +12,7 @@ from interactome_tools import (read_single_interface_annotated_interactome,
                                is_single_interface)
 from stat_tools import fisher_test, sderror_on_fraction
 from math_tools import fitness_effect
-from plot_tools import curve_plot
+from plot_tools import pie_plot, curve_plot
 
 def main():
     
@@ -73,6 +74,7 @@ def main():
     
     # output data files
     interfaceOutFile = interactomeDir / 'interactome_single_interface.txt'
+    dispensablePPIFile = interactomeDir / 'dispensable_content_SingleInterface.pkl'
     
     # create output directories if not existing
     if not interactomeDir.exists():
@@ -123,6 +125,7 @@ def main():
 #         for p in sorted(singleIntf.keys()):
 #             fout.write(p + '\t' + singleIntf[p]] + '\n')
     
+    print('Calculating single- and multi-interface proteins')
     naturalMutations ["single_interface"] = naturalMutations.apply(
                                     lambda x: is_single_interface (x["protein"],
                                                                    x["partners"],
@@ -153,11 +156,12 @@ def main():
     numNaturalMut_considered = numNaturalMut_edgetic + numNaturalMut_nonedgetic
     numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
     
+    label = 'monoedgetic' if mono_edgetic else 'edgetic'
+    
     print('\n********************************************************************')
     print('Dispensable content among all PPIs:')
     print('********************************************************************\n')
     
-    label = 'monoedgetic' if mono_edgetic else 'edgetic'
     print('Fraction of predicted %s mutations:' % label)
     print('Non-disease mutations: %.3f (SE = %g, %d out of %d)' 
             % (numNaturalMut_edgetic / numNaturalMut_considered,
@@ -192,50 +196,49 @@ def main():
     #------------------------------------------------------------------------------------
     
     if mono_edgetic:
-        numNaturalMut_edgetic = sum((naturalMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (naturalMutations["single_interface"]))
-        numDiseaseMut_edgetic = sum((diseaseMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (diseaseMutations["single_interface"]))
+        numNaturalMut_edgetic_single = sum((naturalMutations["mono-edgotype"] == 'mono-edgetic') &
+                                            (naturalMutations["single_interface"]))
+        numDiseaseMut_edgetic_single = sum((diseaseMutations["mono-edgotype"] == 'mono-edgetic') &
+                                            (diseaseMutations["single_interface"]))
     else:
-        numNaturalMut_edgetic = sum((naturalMutations["edgotype"] == 'edgetic') &
-                                    (naturalMutations["single_interface"]))
-        numDiseaseMut_edgetic = sum((diseaseMutations["edgotype"] == 'edgetic') &
-                                    (diseaseMutations["single_interface"]))
+        numNaturalMut_edgetic_single = sum((naturalMutations["edgotype"] == 'edgetic') &
+                                            (naturalMutations["single_interface"]))
+        numDiseaseMut_edgetic_single = sum((diseaseMutations["edgotype"] == 'edgetic') &
+                                            (diseaseMutations["single_interface"]))
 
-    numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
-    numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic
+    numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic_single
+    numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic_single
 
-    numNaturalMut_considered = numNaturalMut_edgetic + numNaturalMut_nonedgetic
-    numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
+    numNaturalMut_considered = numNaturalMut_edgetic_single + numNaturalMut_nonedgetic
+    numDiseaseMut_considered = numDiseaseMut_edgetic_single + numDiseaseMut_nonedgetic
     
     print('\n********************************************************************')
     print('Dispensable content among PPIs of single-interface proteins:')
     print('********************************************************************\n')
     
-    label = 'monoedgetic' if mono_edgetic else 'edgetic'
     print('Fraction of predicted %s mutations:' % label)
     print('Non-disease mutations: %.3f (SE = %g, %d out of %d)' 
-            % (numNaturalMut_edgetic / numNaturalMut_considered,
-               sderror_on_fraction (numNaturalMut_edgetic, numNaturalMut_considered),
-               numNaturalMut_edgetic,
+            % (numNaturalMut_edgetic_single / numNaturalMut_considered,
+               sderror_on_fraction (numNaturalMut_edgetic_single, numNaturalMut_considered),
+               numNaturalMut_edgetic_single,
                numNaturalMut_considered))
     
     print('Disease mutations: %.3f (SE = %g, %d out of %d)' 
-            % (numDiseaseMut_edgetic / numDiseaseMut_considered,
-               sderror_on_fraction (numDiseaseMut_edgetic, numDiseaseMut_considered),
-               numDiseaseMut_edgetic,
+            % (numDiseaseMut_edgetic_single / numDiseaseMut_considered,
+               sderror_on_fraction (numDiseaseMut_edgetic_single, numDiseaseMut_considered),
+               numDiseaseMut_edgetic_single,
                numDiseaseMut_considered))
     
-    fisher_test ([numNaturalMut_edgetic, numNaturalMut_nonedgetic],
-                 [numDiseaseMut_edgetic, numDiseaseMut_nonedgetic])
+    fisher_test ([numNaturalMut_edgetic_single, numNaturalMut_nonedgetic],
+                 [numDiseaseMut_edgetic_single, numDiseaseMut_nonedgetic])
     
     print()
     all_effects = fitness_effect (pN,
                                   pM,
                                   pS,
-                                  numNaturalMut_edgetic,
+                                  numNaturalMut_edgetic_single,
                                   numNaturalMut_considered,
-                                  numDiseaseMut_edgetic,
+                                  numDiseaseMut_edgetic_single,
                                   numDiseaseMut_considered,
                                   pT_S = pE_S,
                                   edgotype = 'edgetic',
@@ -253,50 +256,49 @@ def main():
     #------------------------------------------------------------------------------------
     
     if mono_edgetic:
-        numNaturalMut_edgetic = sum((naturalMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (naturalMutations["single_interface"] == False))
-        numDiseaseMut_edgetic = sum((diseaseMutations["mono-edgotype"] == 'mono-edgetic') &
-                                    (diseaseMutations["single_interface"] == False))
+        numNaturalMut_edgetic_multi = sum((naturalMutations["mono-edgotype"] == 'mono-edgetic') &
+                                            (naturalMutations["single_interface"] == False))
+        numDiseaseMut_edgetic_multi = sum((diseaseMutations["mono-edgotype"] == 'mono-edgetic') &
+                                            (diseaseMutations["single_interface"] == False))
     else:
-        numNaturalMut_edgetic = sum((naturalMutations["edgotype"] == 'edgetic') & 
-                                    (naturalMutations["single_interface"] == False))
-        numDiseaseMut_edgetic = sum((diseaseMutations["edgotype"] == 'edgetic') & 
-                                    (diseaseMutations["single_interface"] == False))
+        numNaturalMut_edgetic_multi = sum((naturalMutations["edgotype"] == 'edgetic') & 
+                                            (naturalMutations["single_interface"] == False))
+        numDiseaseMut_edgetic_multi = sum((diseaseMutations["edgotype"] == 'edgetic') & 
+                                            (diseaseMutations["single_interface"] == False))
 
-    numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
-    numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic
+    numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic_multi
+    numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic_multi
 
-    numNaturalMut_considered = numNaturalMut_edgetic + numNaturalMut_nonedgetic
-    numDiseaseMut_considered = numDiseaseMut_edgetic + numDiseaseMut_nonedgetic
+    numNaturalMut_considered = numNaturalMut_edgetic_multi + numNaturalMut_nonedgetic
+    numDiseaseMut_considered = numDiseaseMut_edgetic_multi + numDiseaseMut_nonedgetic
     
     print('\n********************************************************************')
     print('Dispensable content among PPIs of multi-interface proteins:')
     print('********************************************************************\n')
     
-    label = 'monoedgetic' if mono_edgetic else 'edgetic'
     print('Fraction of predicted %s mutations:' % label)
     print('Non-disease mutations: %.3f (SE = %g, %d out of %d)' 
-            % (numNaturalMut_edgetic / numNaturalMut_considered,
-               sderror_on_fraction (numNaturalMut_edgetic, numNaturalMut_considered),
-               numNaturalMut_edgetic,
+            % (numNaturalMut_edgetic_multi / numNaturalMut_considered,
+               sderror_on_fraction (numNaturalMut_edgetic_multi, numNaturalMut_considered),
+               numNaturalMut_edgetic_multi,
                numNaturalMut_considered))
     
     print('Disease mutations: %.3f (SE = %g, %d out of %d)' 
-            % (numDiseaseMut_edgetic / numDiseaseMut_considered,
-               sderror_on_fraction (numDiseaseMut_edgetic, numDiseaseMut_considered),
-               numDiseaseMut_edgetic,
+            % (numDiseaseMut_edgetic_multi / numDiseaseMut_considered,
+               sderror_on_fraction (numDiseaseMut_edgetic_multi, numDiseaseMut_considered),
+               numDiseaseMut_edgetic_multi,
                numDiseaseMut_considered))
     
-    fisher_test ([numNaturalMut_edgetic, numNaturalMut_nonedgetic],
-                 [numDiseaseMut_edgetic, numDiseaseMut_nonedgetic])
+    fisher_test ([numNaturalMut_edgetic_multi, numNaturalMut_nonedgetic],
+                 [numDiseaseMut_edgetic_multi, numDiseaseMut_nonedgetic])
     
     print()
     all_effects = fitness_effect (pN,
                                   pM,
                                   pS,
-                                  numNaturalMut_edgetic,
+                                  numNaturalMut_edgetic_multi,
                                   numNaturalMut_considered,
-                                  numDiseaseMut_edgetic,
+                                  numDiseaseMut_edgetic_multi,
                                   numDiseaseMut_considered,
                                   pT_S = pE_S,
                                   edgotype = 'edgetic',
@@ -308,7 +310,35 @@ def main():
         if 'P(N|E)_CI' in all_effects:
             lower, upper = all_effects['P(N|E)_CI']
             conf['Multi-interface proteins'] = 100 * lower, 100 * upper
-            
+    
+    with open(dispensablePPIFile, 'wb') as fOut:
+        pickle.dump({'DC':pN_E, 'CI':conf}, fOut)
+    
+    #------------------------------------------------------------------------------------
+    # Plot pie charts
+    #------------------------------------------------------------------------------------
+    
+    numNaturalMut_edgetic = numNaturalMut_edgetic_multi + numNaturalMut_edgetic_single
+    numNaturalMut_nonedgetic = len(naturalMutations) - numNaturalMut_edgetic
+    
+    numDiseaseMut_edgetic = numDiseaseMut_edgetic_multi + numDiseaseMut_edgetic_single
+    numDiseaseMut_nonedgetic = len(diseaseMutations) - numDiseaseMut_edgetic
+    
+    pie_plot ([numNaturalMut_nonedgetic, numNaturalMut_edgetic_single, numNaturalMut_edgetic_multi],
+              angle = 90,
+              colors = ['lightsteelblue', 'red', 'mediumseagreen'],
+              edgewidth = 2,
+              show = showFigs,
+              figdir = figDir,
+              figname = 'nondisease_mutations_singleInterface_%s' % label)
+    pie_plot ([numDiseaseMut_nonedgetic, numDiseaseMut_edgetic_single, numDiseaseMut_edgetic_multi],
+              angle = 90,
+              colors = ['lightsteelblue', 'red', 'mediumseagreen'],
+              edgewidth = 2,
+              show = showFigs,
+              figdir = figDir,
+              figname = 'disease_mutations_singleInterface_%s' % label)
+    
     #------------------------------------------------------------------------------------
     # Plot dispensable PPI content
     #------------------------------------------------------------------------------------
@@ -318,7 +348,6 @@ def main():
     else:
         maxY = max(pN_E.values())
     maxY = 10 * np.ceil(maxY / 10)
-    maxY = 20
     
     curve_plot ([pN_E[p] for p in pN_E_keys if p in pN_E],
                 error = [conf[p] for p in pN_E_keys if p in pN_E] if computeConfidenceIntervals else None,
@@ -333,7 +362,7 @@ def main():
                 yMinorTicks = 4,
                 xticks = [1, 2],
                 xticklabels = [p.replace(' ', '\n') for p in pN_E_keys if p in pN_E],
-                yticklabels = list(np.arange(0, maxY + 5, 5)),
+                yticklabels = list(np.arange(0, maxY + 5, 10)),
                 fontsize = 18,
                 adjustBottom = 0.2,
                 shiftBottomAxis = -0.1,

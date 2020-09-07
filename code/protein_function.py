@@ -103,6 +103,22 @@ def coexpr (p1, p2, expr, minPts = 3, method = 'pearson_corr', singleExp = True)
                 return np.mean(all)
     return np.nan
 
+def expr_diff (p1, p2, expr, minPts = 1, logBase = 10, method = 'mean'):
+
+    if (p1 in expr) and (p2 in expr):
+        e1, e2 = expr[p1], expr[p2]
+        not_nan = (np.isnan(e1) == False) & (np.isnan(e2) == False)
+        e1, e2 = e1[not_nan], e2[not_nan]
+        if logBase:
+            not_zero = (e1 > 0) & (e2 > 0)
+            e1, e2 = e1[not_zero], e2[not_zero]
+            e1 = np.log10(e1) / np.log10(logBase)
+            e2 = np.log10(e2) / np.log10(logBase)
+        if len(e1) >= minPts:
+            if method is 'mean':
+                return np.mean(np.abs(e1 - e2))
+    return np.nan
+
 def expr_ratio (p1, p2, expr, minPts = 1, method = 'mean'):
     """Calculate the log of expression ratio for two proteins across multiple experiments.
 
@@ -129,22 +145,6 @@ def expr_ratio (p1, p2, expr, minPts = 1, method = 'mean'):
                 ratio = [max(r, 1/r) for r in ratio] 
                 logRatio = list(map(np.log10, ratio))
                 return np.mean(logRatio)
-    return np.nan
-
-def expr_log_diff (p1, p2, expr, minPts = 1, logBase = 10, method = 'mean'):
-
-    if (p1 in expr) and (p2 in expr):
-        e1, e2 = expr[p1], expr[p2]
-        not_nan = (np.isnan(e1) == False) & (np.isnan(e2) == False)
-        e1, e2 = e1[not_nan], e2[not_nan]
-        if logBase:
-            not_zero = (e1 > 0) & (e2 > 0)
-            e1, e2 = e1[not_zero], e2[not_zero]
-            e1 = np.log10(e1) / np.log10(logBase)
-            e2 = np.log10(e2) / np.log10(logBase)
-        if len(e1) >= minPts:
-            if method is 'mean':
-                return np.mean(np.abs(e1 - e2))
     return np.nan
 
 def expr_ratio_symbolic (p1,
@@ -343,13 +343,15 @@ def produce_fastsemsim_protein_gosim_dict (inPath,
 def produce_illumina_expr_dict (inPath,
                                 uniprotIDmapFile,
                                 outPath,
+                                normalize = False,
                                 headers = None):
-    """Make a dictionary of protein tissue expression from Illumina Body Map dataset, log2 transformed.
+    """Make a dictionary of protein tissue expression from Illumina Body Map dataset.
 
     Args:
         inPath (Path): path to file containing Illumina Body Map tissue expression data.
         uniprotIDmapFile (Path): path to file containing dict of mappings to UniProt IDs.
         outPath (Path): file path to save output dict to.
+        normalize (bool): if True, normalize gene expression across tissues.
         headers (list): list of expression column indices starting with gene name column index
                         followed by indices for expression data. If None, column 1 is used as
                         gene name and columns 2 to 17 are used as expression data.
@@ -364,8 +366,11 @@ def produce_illumina_expr_dict (inPath,
     for _, row in expr.iterrows():
        if row[headers[0]] in uniprotID:
             id = uniprotID[row[headers[0]]]
-            #e[id] = np.log2(np.array([row[k] for k in headers[1:]]))
-            e[id] = np.array([row[k] for k in headers[1:]])
+            values = np.array([row[k] for k in headers[1:]])
+            if normalize:
+                e[id] = (values - values.mean()) / values.std()
+            else:
+                e[id] = values
     with open(outPath, 'wb') as fOut:
         pickle.dump(e, fOut)
 
@@ -395,7 +400,7 @@ def produce_gtex_expr_dict (inDir,
         print('processing file %d of %d: %s' % (i + 1, len(filenames), filename))
         expr = {}
         inPath = inDir / filename
-        with io.open(inPath, "r", errors='replace') as f:
+        with io.open(inPath, "r", errors = 'replace') as f:
             next(f)
             for j, line in enumerate(f):
                 linesplit = list(map(str.strip, line.strip().split('\t')))
@@ -456,6 +461,7 @@ def produce_hpa_expr_dict (inPath, uniprotIDmapFile, outPath):
 def produce_fantom5_expr_dict (inPath,
                                uniprotIDmapFile,
                                outPath,
+                               normalize = False,
                                sampleTypes = None,
                                sampleTypeFile = None,
                                uniprotIDlistFile = None):
@@ -465,6 +471,7 @@ def produce_fantom5_expr_dict (inPath,
         inDir (Path): file directory containing Fantom5 tissue expression data files.
         uniprotIDmapFile (Path): path to file containing dict of mappings to UniProt IDs.
         outPath (Path): file path to save output dict to.
+        normalize (bool): if True, normalize gene expression across tissues.
         sampleTypes (str): type of sample; ex tissues.
         sampleTypeFile (Path): path to Fantom5 sample type spreadsheet.
         uniprotIDlistFile (Path): path to file containing list of UniProt IDs for output.
@@ -520,7 +527,7 @@ def produce_fantom5_expr_dict (inPath,
         for n, line in enumerate(f):
             pass
     n += 1
-    with io.open(inPath, "r") as f:
+    with io.open(inPath, "r", errors = 'replace') as f:
         expr = {}
         for i, line in enumerate(f):
             sys.stdout.write('  Line %d out of %d (%.2f%%) \r' % (i+1, n, 100*(i+1)/n))
@@ -533,14 +540,18 @@ def produce_fantom5_expr_dict (inPath,
                         id = uniprotID[hgncID]
                         if id in uniprotIDlist:
                             tpms = [tpm for ind, tpm in enumerate(linesplit) if ind in tpmIndex]
-                            tpms = list(map(float, tpms))
+                            tpms =  list(map(lambda x: float(x) if is_numeric(x) else np.nan, tpms))
                             if id in expr:
                                 expr[id].append(tpms)
                             else:
                                 expr[id] = [tpms]
     print()
     for k, v in expr.items():
-        expr[k] = np.nanmean(v, axis=0)
+        values = np.nanmean(v, axis=0)
+        if normalize:
+            expr[k] = (values - values.mean()) / values.std()
+        else:
+            expr[k] = values
     with open(outPath, 'wb') as fOut:
         pickle.dump(expr, fOut)
 

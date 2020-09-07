@@ -8,6 +8,7 @@ import pickle
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from simple_tools import sample_random_pairs
 from protein_function import (produce_illumina_expr_dict,
                               produce_gtex_expr_dict,
                               produce_hpa_expr_dict,
@@ -24,13 +25,14 @@ def main():
     
     # gene expression database name
     # options: Illumina, GTEx, HPA, Fantom5, GEO
-    expr_db = 'Fantom5'
+    expr_db = 'GEO'
     
-    normalize = False
-        
     # minimum number of expression point values required for protein pair tissue
     # co-expression to be considered
     minPoints = 5
+    
+    # number of random protein pairs
+    numRandPairs = 100000
     
     # show figures
     showFigs = False
@@ -62,14 +64,11 @@ def main():
     gdsTypeFile = procDir / 'gds_subset_type.txt'
     uniprotIDmapFile = procDir / 'to_human_uniprotID_map.pkl'
     uniqueGeneSwissProtIDFile = procDir / 'uniprot_unique_gene_reviewed_human_proteome.list'
-    #interactomeFile = interactomeDir / 'reference_interactome.txt'
-    interactomeFile = interactomeDir / 'structural_interactome.txt'
+    interactomeFile = interactomeDir / 'reference_interactome.txt'
+    #interactomeFile = interactomeDir / 'structural_interactome.txt'
     
     # output data files
-    if (expr_db is 'GTEx') or (expr_db in ['Illumina', 'Fantom5'] and normalize):
-        proteinExprFile = procDir / ('protein_expr_norm_%s.pkl' % expr_db)
-    else:
-        proteinExprFile = procDir / ('protein_expr_%s.pkl' % expr_db)
+    proteinExprFile = procDir / ('protein_expr_%s.pkl' % expr_db)
     
     # create output directories if not existing
     if not interactomeDir.exists():
@@ -88,7 +87,6 @@ def main():
             produce_illumina_expr_dict (illuminaExprFile,
                                         uniprotIDmapFile,
                                         proteinExprFile,
-                                        normalize = normalize,
                                         headers = list(range(1, 18)))
         elif expr_db is 'GTEx':
             produce_gtex_expr_dict (gtexDir,
@@ -103,7 +101,6 @@ def main():
             produce_fantom5_expr_dict (fantomExprFile,
                                        uniprotIDmapFile,
                                        proteinExprFile,
-                                       normalize = normalize,
                                        sampleTypes = 'tissues',
                                        sampleTypeFile = fantomSampleTypeFile,
                                        uniprotIDlistFile = uniqueGeneSwissProtIDFile)
@@ -127,14 +124,26 @@ def main():
     # Load interactome
     #------------------------------------------------------------------------------------
     
-    ppi = pd.read_table (interactomeFile, sep='\t')
+    interactome = pd.read_table (interactomeFile, sep='\t')
+    
+    #-----------------------------------------------------------------------------------------
+    # Generate random PPIs
+    #-----------------------------------------------------------------------------------------
+    
+    print('Sampling random pairs...')
+    proteins = list(set(interactome[["Protein_1", "Protein_2"]].values.flatten()))
+    randPairs = sample_random_pairs (proteins,
+                                     numRandPairs,
+                                     replacement = False,
+                                     selfPair = False)
         
     #------------------------------------------------------------------------------------
     
     all = []
-    n = len(ppi)
-    for i, (p1, p2) in enumerate(ppi[["Protein_1", "Protein_2"]].values):
-        sys.stdout.write('  PPI %d out of %d (%.2f%%) \r' % (i+1, n, 100*(i+1)/n))
+    n = len(randPairs)
+    print('Calculating co-expression')
+    for i, (p1, p2) in enumerate(randPairs):
+        sys.stdout.write('  Pair %d out of %d (%.2f%%) \r' % (i+1, n, 100*(i+1)/n))
         sys.stdout.flush()
         c = coexpr (p1,
                     p2,
@@ -145,27 +154,22 @@ def main():
     print()
     all = [c for c in all if not np.isnan(c)]
     
-    print('PPIs = %d' % len(all))
+    print('Pairs = %d' % len(all))
     print('Mean = %g' % np.mean(all))
     print('Median = %g' % np.median(all))
     print('SD = %g' % np.std(all))
     print('Range = (%g, %g)' % (min(all), max(all)))
     
-    if (expr_db is 'GTEx') or (expr_db in ['Illumina', 'Fantom5'] and normalize):
-        figname = 'ppi_coexpr_norm_histogram'
-    else:
-        figname = 'ppi_coexpr_histogram'
-    
     multi_histogram_plot (all,
                           xlabel = 'Co-expression coefficient',
-                          ylabel = 'Number of PPIs',
+                          ylabel = 'Number of random pairs',
                           bins = 100,
-                          fontsize = 16,
+                          fontsize = 18,
                           xlim = [-1.1, 1.1],
                           xlabels = [-1, -0.5, 0, 0.5, 1],
                           show = showFigs,
                           figdir = figDir,
-                          figname = figname + '_' + expr_db)
+                          figname = 'rand_pair_coexpr_histogram_%s' % expr_db)
     
 if __name__ == "__main__":
     main()
