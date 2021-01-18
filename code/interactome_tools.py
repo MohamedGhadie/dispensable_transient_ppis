@@ -1,5 +1,5 @@
 #----------------------------------------------------------------------------------------
-# Modules for processing interactomes.
+# Modules for processing interactome data.
 #----------------------------------------------------------------------------------------
 
 import sys
@@ -461,7 +461,15 @@ def produce_protein_interaction_dict (inPath, outPath):
         pickle.dump(partners, fOut)
 
 def interaction_partners (interactome):
-    
+    """Return a dictionary of interaction partners for each protein in the interactome.
+
+    Args:
+        interactome (DataFrame): interactome network.
+
+    Returns:
+        dict
+
+    """
     proteins =  set(interactome[["Protein_1", "Protein_2"]].values.flatten())
     proteinPartners = {}
     for protein in proteins:
@@ -491,7 +499,16 @@ def partners_per_site (interactome):
     return partners
 
 def num_partners (interactome, colnames = None):
-    
+    """Return a dictionary of number of interaction partners for each protein in the interactome.
+
+    Args:
+        interactome (DataFrame): interactome network.
+        colnames (list): names of columns containing interaction partners.
+
+    Returns:
+        dict
+
+    """
     if not colnames:
         colnames = ["Protein_1", "Protein_2"]
     partners = {p:set() for p in set(interactome[colnames].values.flatten())}
@@ -501,7 +518,18 @@ def num_partners (interactome, colnames = None):
     return {p:len(pr) for p, pr in partners.items()}
 
 def is_hub_ppi (p1, p2, degree, hubDegree = 20):
-    
+    """Check whether a PPI involves a hub protein or not.
+
+    Args:
+        p1 (str): first protein ID.
+        p2 (str): second protein ID.
+        degree (dict): interaction degree for each protein.
+        hubDegree (int): minimum hub protein degree.
+
+    Returns:
+        bool
+
+    """
     hub1 = degree[p1] >= hubDegree if p1 in degree else None
     hub2 = degree[p2] >= hubDegree if p2 in degree else None
     
@@ -522,7 +550,18 @@ def num_sites (interactome):
     return {p:len(s) for p, s in sites.items()}
 
 def mutExcl_simult_partners (interactome, maxSimultOverlap = 0):
-    
+    """Return dictionaries of proteins with mutually exclusive or simultaneously possible 
+        binding associated with each protein partner in the interactome.
+
+    Args:
+        interactome (DataFrame): interface-annotated interactome.
+        maxSimultOverlap (numeric): maximum fraction of interface residues allowed to 
+                                    overlap between two simultaneously possible PPIs.
+
+    Returns:
+        dict, dict: mutually exclusive partners, simultaneously possible partners
+
+    """
     allpartners = interaction_partners (interactome)
     interfaces = get_allprotein_interfaces (allpartners, interactome)
     mutExcl = {p:{} for p in allpartners.keys()}
@@ -534,7 +573,6 @@ def mutExcl_simult_partners (interactome, maxSimultOverlap = 0):
         sys.stdout.flush()
         mutExcl[p] = {pr:set() for pr in partners}
         simult[p] = {pr:set() for pr in partners}
-        #interfaces = get_interfaces (p, partners, interactome)
         for pr in partners:
             for pr2 in partners - {pr}:
                 overlap, _ = sequence_overlap (interfaces[p][pr], interfaces[p][pr2])
@@ -546,21 +584,56 @@ def mutExcl_simult_partners (interactome, maxSimultOverlap = 0):
     return mutExcl, simult
 
 def max_num_mutExcl (p1, p2, mutExcl):
-    
+    """Return the maximum number of mutually exclusive binding partners associated with an
+        interaction between two proteins, the higher between both proteins.
+
+    Args:
+        p1 (str): first protein ID.
+        p2 (str): second protein ID.
+        mutExcl (dict): nested dictionary of mutually exclusive partners associated with 
+                        each protein.
+
+    Returns:
+        numeric
+
+    """
     if (p1 in mutExcl) and (p2 in mutExcl):
         if (p2 in mutExcl[p1]) and (p1 in mutExcl[p2]):
             return max(len(mutExcl[p1][p2]), len(mutExcl[p2][p1]))
     return np.nan
 
 def max_num_simult (p1, p2, simult):
-    
+    """Return the maximum number of simultaneously possible binding partners associated 
+        with an interaction between two proteins, the higher between both proteins.
+
+    Args:
+        p1 (str): first protein ID.
+        p2 (str): second protein ID.
+        simult (dict): nested dictionary of simultaneously possible binding partners 
+                        associated with each protein.
+
+    Returns:
+        numeric
+
+    """
     if (p1 in simult) and (p2 in simult):
         if (p2 in simult[p1]) and (p1 in simult[p2]):
             return max(len(simult[p1][p2]), len(simult[p2][p1]))
     return np.nan
 
 def single_interface_proteins (interactome, partners, maxOverlap = 0):
-    
+    """Return boolean dictionary of single-interface proteins.
+
+    Args:
+        interactome (DataFrame): interface-annotated interactome.
+        partners (dict): interaction partners for each protein.
+        maxOverlap (numeric): maximum fraction of interface residues allowed to 
+                                overlap between two different interfaces.
+
+    Returns:
+        dict
+
+    """
     proteins = list(set(interactome[["Protein_1", "Protein_2"]].values.flatten()))
     single = {}
     for p in proteins:
@@ -568,11 +641,35 @@ def single_interface_proteins (interactome, partners, maxOverlap = 0):
     return single
 
 def is_multi_interface (p, partners, interactome, maxOverlap = 0):
-    
+    """Check whether a protein is multi-interface or not.
+
+    Args:
+        p (str): protein ID.
+        partners (list): interaction partners.
+        interactome (DataFrame): interface-annotated interactome.
+        maxOverlap (numeric): maximum fraction of interface residues allowed to 
+                                overlap between two different interfaces.
+
+    Returns:
+        bool
+
+    """
     return not is_single_interface (p, partners, interactome, maxOverlap = maxOverlap)
 
 def is_single_interface (p, partners, interactome, maxOverlap = 0):
-    
+    """Check whether a protein is single-interface or not.
+
+    Args:
+        p (str): protein ID.
+        partners (list): interaction partners.
+        interactome (DataFrame): interface-annotated interactome.
+        maxOverlap (numeric): maximum fraction of interface residues allowed to 
+                                overlap between two different interfaces.
+
+    Returns:
+        bool
+
+    """
     for i, p1 in enumerate(partners):
         for p2 in partners[i+1:]:
             if is_simultaneous (p, p1, p2, interactome, maxOverlap = maxOverlap):
@@ -580,17 +677,52 @@ def is_single_interface (p, partners, interactome, maxOverlap = 0):
     return True
 
 def is_mutually_exclusive (p, p1, p2, interactome, maxSimultOverlap = 0):
-    
+    """Check whether two partners of a protein bind in a mutually exclusive manner.
+
+    Args:
+        p (str): protein ID.
+        p1 (str): first partner ID.
+        p2 (str): second partner ID.
+        interactome (DataFrame): interface-annotated interactome.
+        maxSimultOverlap (numeric): maximum fraction of interface residues allowed to 
+                                    overlap between interfaces of simultaneous binding.
+
+    Returns:
+        bool
+
+    """
     return not is_simultaneous (p, p1, p2, interactome, maxOverlap = maxSimultOverlap)
 
 def is_simultaneous (p, p1, p2, interactome, maxOverlap = 0):
-    
+    """Check whether two partners of a protein bind simultaneously.
+
+    Args:
+        p (str): protein ID.
+        p1 (str): first partner ID.
+        p2 (str): second partner ID.
+        interactome (DataFrame): interface-annotated interactome.
+        maxOverlap (numeric): maximum fraction of interface residues allowed to 
+                                overlap between interfaces of simultaneous binding.
+
+    Returns:
+        bool
+
+    """
     interface = get_interfaces (p, [p1, p2], interactome)
     o1, o2 = sequence_overlap (interface[p1], interface[p2])
     return (o1 <= maxOverlap) and (o2 <= maxOverlap)
 
 def get_allprotein_interfaces (partners, interactome):
-    
+    """Return all binding interfaces for all interacting proteins.
+
+    Args:
+        partners (dict): interaction partners for each protein.
+        interactome (DataFrame): interface-annotated interactome.
+
+    Returns:
+        dict
+
+    """
     interfaces = {}
     n = len(partners.keys())
     print('Extracting all protein interfaces:')
@@ -602,11 +734,31 @@ def get_allprotein_interfaces (partners, interactome):
     return interfaces
 
 def get_interfaces (p, partners, interactome):
-    
+    """Return binding interfaces for all partners of a single protein.
+
+    Args:
+        p (str): protein ID.
+        partners (list): interaction partners.
+        interactome (DataFrame): interface-annotated interactome.
+
+    Returns:
+        dict
+
+    """
     return {p2:get_interface (p, p2, interactome)[0] for p2 in partners}
 
 def get_interface (p1, p2, interactome):
-    
+    """Return binding interface for two interacting proteins.
+
+    Args:
+        p1 (str): first protein ID.
+        p2 (str): second protein ID.
+        interactome (DataFrame): interface-annotated interactome.
+
+    Returns:
+        tuple
+
+    """
     ppi = interactome.loc[((interactome["Protein_1"] == p1) & (interactome["Protein_2"] == p2)) |
                           ((interactome["Protein_1"] == p2) & (interactome["Protein_2"] == p1))]
     if not ppi.empty:

@@ -15,7 +15,11 @@ def main():
     
     # reference interactome name
     # options: HuRI, IntAct
-    interactome_name = 'IntAct'
+    interactome_name = 'HuRI'
+    
+    # method of calculating mutation ∆∆G for which results will be used
+    # options: bindprofx, foldx
+    ddg_method = 'foldx'
     
     # set to True to calculate dispensable PPI content using fraction of mono-edgetic mutations 
     # instead of all edgetic mutations
@@ -54,19 +58,22 @@ def main():
     # directory of processed data files specific to interactome
     interactomeDir = procDir / interactome_name
     
+    # directory of edgetic mutation calculation method
+    edgeticDir = interactomeDir / 'physics' / (ddg_method + '_edgetics')
+    
     # figure directory
-    figDir = Path('../figures') / interactome_name
+    figDir = Path('../figures') / interactome_name / 'physics' / (ddg_method + '_edgetics')
     
     # input data files
-    naturalMutationsFile = interactomeDir / 'nondisease_mutation_edgetics.txt'
-    diseaseMutationsFile = interactomeDir / 'disease_mutation_edgetics.txt'
+    naturalMutationsFile = edgeticDir / 'nondisease_mutation_edgetics.txt'
+    diseaseMutationsFile = edgeticDir / 'disease_mutation_edgetics.txt'
     
     # output data files
-    dispensablePPIFile = interactomeDir / ('fraction_disp_PPIs%s.pkl' % ('_monoedgetic' if mono_edgetic else ''))
+    dispensablePPIFile = edgeticDir / ('fraction_disp_PPIs%s.pkl' % ('_monoedgetic' if mono_edgetic else ''))
     
     # create output directories if not existing
-    if not interactomeDir.exists():
-        os.makedirs(interactomeDir)
+    if not edgeticDir.exists():
+        os.makedirs(edgeticDir)
     if not figDir.exists():
         os.makedirs(figDir)
     
@@ -106,7 +113,7 @@ def main():
     print('non-disease mutations: %d' % len(natMutationProteins))
     print('disease mutations: %d' % len(disMutationProteins))
     print('all mutations: %d' % len(mutationProteins))
-       
+    
     #------------------------------------------------------------------------------------
     # Dispensable content among all PPIs
     #------------------------------------------------------------------------------------
@@ -141,20 +148,20 @@ def main():
                sderror_on_fraction (numDiseaseMut_edgetic, numDiseaseMut_considered),
                numDiseaseMut_edgetic,
                numDiseaseMut_considered))
-    
+    return
     fisher_test ([numNaturalMut_edgetic, numNaturalMut_nonedgetic],
                  [numDiseaseMut_edgetic, numDiseaseMut_nonedgetic])
     
     pie_plot ([numNaturalMut_nonedgetic, numNaturalMut_edgetic],
               angle = 90,
-              colors = ['mediumslateblue', 'red'],
+              colors = ['lightsteelblue', 'orange'],
               edgewidth = 2,
               show = showFigs,
               figdir = figDir,
               figname = 'nondisease_mutations_%s' % label)
     pie_plot ([numDiseaseMut_nonedgetic, numDiseaseMut_edgetic],
               angle=90,
-              colors = ['mediumslateblue', 'red'],
+              colors = ['lightsteelblue', 'orange'],
               edgewidth = 2,
               show = showFigs,
               figdir = figDir,

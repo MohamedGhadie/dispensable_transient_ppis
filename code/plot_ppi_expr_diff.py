@@ -10,17 +10,18 @@ from pathlib import Path
 from protein_function import (produce_illumina_expr_dict,
                               produce_gtex_expr_dict,
                               produce_fantom5_expr_dict,
-                              expr_diff)
+                              produce_geo_expr_dict,
+                              expr_log_diff)
 from plot_tools import multi_histogram_plot
 
 def main():
     
     # reference interactome name: HI-II-14, HuRI, IntAct
-    interactome_name = 'HuRI'
+    interactome_name = 'IntAct'
     
     # gene expression database name
-    # options: Illumina, GTEx, Fantom5
-    expr_db = 'Illumina'
+    # options: Illumina, GTEx, Fantom5, GEO
+    expr_db = 'GEO'
     
     # minimum number of expression point values required for protein pair 
     # expression ratios to be considered
@@ -55,12 +56,14 @@ def main():
     gtexDir = extDir / 'GTEx_Analysis_v7_eQTL_expression_matrices'
     fantomExprFile = extDir / 'hg38_fair+new_CAGE_peaks_phase1and2_tpm_ann.osc.txt'
     fantomSampleTypeFile = extDir / 'fantom5_sample_type.xlsx'
+    geoDir = extDir / 'GEO' / 'datasets'
+    gdsTypeFile = procDir / 'gds_subset_type.txt'
     uniprotIDmapFile = procDir / 'to_human_uniprotID_map.pkl'
     uniqueGeneSwissProtIDFile = procDir / 'uniprot_unique_gene_reviewed_human_proteome.list'
     interactomeFile = interactomeDir / 'structural_interactome.txt'
     
     # output data files
-    if (expr_db is 'GTEx') or normalize:
+    if (expr_db is 'GTEx') or (expr_db in ['Illumina', 'Fantom5'] and normalize):
         proteinExprFile = procDir / ('protein_expr_norm_%s.pkl' % expr_db)
     else:
         proteinExprFile = procDir / ('protein_expr_%s.pkl' % expr_db)
@@ -95,20 +98,31 @@ def main():
                                        sampleTypes = 'tissues',
                                        sampleTypeFile = fantomSampleTypeFile,
                                        uniprotIDlistFile = uniqueGeneSwissProtIDFile)
+        elif expr_db is 'GEO':
+            produce_geo_expr_dict (gdsTypeFile,
+                                   uniprotIDmapFile,
+                                   geoDir,
+                                   proteinExprFile,
+                                   numPoints = 5,
+                                   avg = 'all')
     
     with open(proteinExprFile, 'rb') as f:
         expr = pickle.load(f)
     
-    if (expr_db is 'GTEx') or normalize:
+    if (expr_db is 'GTEx') or (expr_db in ['Illumina', 'Fantom5'] and normalize):
         logBase = None
+    singleExp = False if expr_db is 'GEO' else True
+    
     interactome = pd.read_table (interactomeFile, sep='\t')
     interactome ["expr_diff"] = interactome.apply (lambda x: 
-                                                       expr_diff (x["Protein_1"],
-                                                                  x["Protein_2"],
-                                                                  expr,
-                                                                  minPts = minPoints,
-                                                                  logBase = logBase,
-                                                                  method = 'mean'), axis=1)
+                                                       expr_log_diff (x["Protein_1"],
+                                                                      x["Protein_2"],
+                                                                      expr,
+                                                                      minPts = minPoints,
+                                                                      logBase = logBase,
+                                                                      method = 'mean',
+                                                                      singleExp = singleExp,
+                                                                      average = True), axis=1)
     
     interactome = interactome [np.isnan(interactome ["expr_diff"]) == False]
     
@@ -131,7 +145,7 @@ def main():
         print('SD = %g' % np.std(values))
         print('Range = (%g, %g)' % (min(values), max(values)))
     
-    if (expr_db is 'GTEx') or normalize:
+    if (expr_db is 'GTEx') or (expr_db in ['Illumina', 'Fantom5'] and normalize):
         figname = 'ppi_expr_norm_diff_histogram'
     else:
         figname = 'ppi_expr_log_diff_histogram'

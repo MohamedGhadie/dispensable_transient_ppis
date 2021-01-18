@@ -11,17 +11,17 @@ from plot_tools import multi_bar_plot
 def main():
     
     # reference interactome names
-    interactome_names = ['HuRI', 'IntAct']
+    interactome_names = ['HuRI', 'IntAct', 'experiment']
     
     # structural interactome names for plot labels
-    struc_interactome_names = ['Y2H-SI', 'Lit-SI']
+    struc_interactome_names = ['Y2H-SI', 'Lit-SI', 'Experiment']
     
     # options: MutExcl, SingleInterface, Transient, Weak, Unbalanced
-    tp = 'Transient'
+    tp = 'Weak'
     
     # gene expression database name
     # options: Illumina, Fantom5, GEO
-    expr_db = 'Illumina'
+    expr_db = 'Fantom5'
     
     # method of calculating mutation ∆∆G for which results will be used
     # options: bindprofx, foldx
@@ -30,19 +30,19 @@ def main():
     groups = {'MutExcl':        ['Simultaneously possible PPIs', 'Moderately exclusive PPIs', 'Highly exclusive PPIs'],
               'SingleInterface':['Multi-interface proteins', 'Single-interface proteins'],
               'Transient':      ['Permanent PPIs', 'Transient PPIs'],
-              'Weak':           ['Strong PPIs', 'Weak PPIs'],
+              'Weak':           ['All PPIs', 'Strong PPIs', 'Weak PPIs'],
               'Unbalanced':     ['Balanced PPIs', 'Unbalanced PPIs']}
     
     groupColors = {'MutExcl':           ['mediumseagreen', 'orange', 'red'],
                    'SingleInterface':   ['mediumseagreen', 'red'],
                    'Transient':         ['mediumseagreen', 'red'],
-                   'Weak':              ['mediumseagreen', 'red'],
+                   'Weak':              ['orange', 'mediumseagreen', 'red'],
                    'Unbalanced':        ['mediumseagreen', 'red']}
     
     groupHatches = {'MutExcl':          ['..', 'o', '/'],
                     'SingleInterface':  ['..', '/'],
                     'Transient':        ['..', '/'],
-                    'Weak':             ['..', '/'],
+                    'Weak':             ['..', 'o', '/'],
                     'Unbalanced':       ['..', '/']}
     
     figName = {'MutExcl':           'dispensable_content_MutExcl',
@@ -54,7 +54,7 @@ def main():
     barWidth = {'MutExcl':          0.2,
                 'SingleInterface':  0.3,
                 'Transient':        0.3,
-                'Weak':             0.3,
+                'Weak':             0.2,
                 'Unbalanced':       0.3}
     
     barGap = 0.05
@@ -89,10 +89,13 @@ def main():
         os.makedirs(figDir)
     
     allresults = {}
-    for name in interactome_names:
+    for name in interactome_names[:-1]:
         inPath = procDir / name / 'physics' / (ddg_method + '_edgetics') / inFile[tp]
         with open(inPath, 'rb') as f:
             allresults[name] = pickle.load(f)
+    inPath = procDir / 'experiment' / 'dispensable_content.pkl'
+    with open(inPath, 'rb') as f:
+        allresults['experiment'] = pickle.load(f)
     
     alldisp, allconf = [], []
     for g in groups[tp]:
@@ -132,11 +135,11 @@ def main():
                     bargap = barGap,
                     capsize = 10 if plotConfidenceIntervals else 0,
                     fmt = '.k',
-                    msize = 26,
+                    msize = 22,
                     ewidth = 2,
                     edgecolor = 'black',
                     ecolors = 'k',
-                    fontsize = 28,
+                    fontsize = 24,
                     opacity = None,
                     #xlim = [0.8, numInteractomes + 0.1],
                     ylim = [0, maxY],

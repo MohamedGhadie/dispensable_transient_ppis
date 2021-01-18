@@ -103,21 +103,44 @@ def coexpr (p1, p2, expr, minPts = 3, method = 'pearson_corr', singleExp = True)
                 return np.mean(all)
     return np.nan
 
-def expr_diff (p1, p2, expr, minPts = 1, logBase = 10, method = 'mean'):
+def expr_log_diff (p1,
+                   p2,
+                   expr,
+                   minPts = 1,
+                   logBase = 10,
+                   method = 'mean',
+                   singleExp = True,
+                   average = False):
 
-    if (p1 in expr) and (p2 in expr):
-        e1, e2 = expr[p1], expr[p2]
-        not_nan = (np.isnan(e1) == False) & (np.isnan(e2) == False)
-        e1, e2 = e1[not_nan], e2[not_nan]
-        if logBase:
-            not_zero = (e1 > 0) & (e2 > 0)
-            e1, e2 = e1[not_zero], e2[not_zero]
-            e1 = np.log10(e1) / np.log10(logBase)
-            e2 = np.log10(e2) / np.log10(logBase)
-        if len(e1) >= minPts:
-            if method is 'mean':
-                return np.mean(np.abs(e1 - e2))
-    return np.nan
+    if singleExp:
+        if (p1 in expr) and (p2 in expr):
+            e1, e2 = expr[p1], expr[p2]
+            not_nan = (np.isnan(e1) == False) & (np.isnan(e2) == False)
+            e1, e2 = e1[not_nan], e2[not_nan]
+            if logBase:
+                not_zero = (e1 > 0) & (e2 > 0)
+                e1, e2 = e1[not_zero], e2[not_zero]
+                e1 = np.log10(e1) / np.log10(logBase)
+                e2 = np.log10(e2) / np.log10(logBase)
+            if len(e1) >= minPts:
+                if method is 'mean':
+                    return np.mean(np.abs(e1 - e2))
+        return np.nan
+    else:
+        all = []
+        if (p1 in expr) and (p2 in expr):
+            for dataset in expr[p1]:
+                if dataset in expr[p2]:
+                    subExpr = {p1:expr[p1][dataset], p2:expr[p2][dataset]}
+                    all.append(expr_log_diff (p1,
+                                              p2,
+                                              subExpr,
+                                              minPts = minPts,
+                                              logBase = logBase,
+                                              method = method,
+                                              singleExp = True))
+            return np.nanmean(all) if average else all
+        return np.nan if average else all
 
 def expr_ratio (p1, p2, expr, minPts = 1, method = 'mean'):
     """Calculate the log of expression ratio for two proteins across multiple experiments.
@@ -655,18 +678,41 @@ def is_unbalanced (p1,
                    expr,
                    minPts = 1,
                    logBase = 10,
-                   minDiff = 10):
+                   minDiff = 1,
+                   singleExp = True):
 
-    meanDiff = expr_log_diff (p1,
-                              p2,
-                              expr,
-                              minPts = minPts,
-                              logBase = logBase,
-                              method = 'mean')
+    if singleExp:
+        meanDiff = expr_log_diff (p1,
+                                  p2,
+                                  expr,
+                                  minPts = minPts,
+                                  logBase = logBase,
+                                  method = 'mean')
     
-    if np.isnan(meanDiff):
-        return '-'
-    elif meanDiff >= minDiff:
-        return 'unbalanced'
+        if np.isnan(meanDiff):
+            return '-'
+        else:
+            return 'unbalanced' if meanDiff >= minDiff else 'balanced'
     else:
-        return 'balanced'
+        meanDiff = expr_log_diff (p1,
+                                  p2,
+                                  expr,
+                                  minPts = 1,
+                                  logBase = 10,
+                                  method = 'mean',
+                                  singleExp = False,
+                                  average = False)
+        
+        all = []
+        for d in meanDiff:
+            if not np.isnan(d):
+                all.append('unbalanced' if d >= minDiff else 'balanced')
+        
+        unbalanced = all.count('unbalanced')
+        balanced = all.count('balanced')
+        if unbalanced > balanced:
+            return 'unbalanced'
+        elif balanced > 0:
+            return 'balanced'
+        else:
+            return '-'

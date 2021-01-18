@@ -916,6 +916,26 @@ def produce_pdb_ids (inPath, outPath):
         for id in sorted(set(pdbIDs)):
             fout.write(id + '\n')
 
+def produce_chain_dict (inPath, outPath):
+    """Produce a dictionary of chain IDs associated with each PDB ID. 
+
+    Args:
+        inPath (Path): path to file containing list of chain IDs.
+        outPath (Path): path to save pickle file to.
+
+    """
+    with open(inPath, 'r') as fin:
+        chainIDs = list(fin.read().split())
+    chains = {}
+    for chainid in chainIDs:
+        pdbid, id = chainid.split('_')
+        if pdbid in chains:
+            chains[pdbid].add(id)
+        else:
+            chains[pdbid] = {id}
+    with open(outPath, 'wb') as fOut:
+        pickle.dump(chains, fOut)
+
 def produce_chain_struc_sequences (chainIDs, pdbDir, outPath):
     """Produce sequences of chain structure residues that are also part chain SEQRES 
         sequences in fasta format.

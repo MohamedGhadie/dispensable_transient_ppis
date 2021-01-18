@@ -365,18 +365,6 @@ def sample_random_pairs (ls, N, replacement = True, selfPair = False):
         list
 
     """
-#     pairs, n = [], 0
-#     while n < N:
-#         p1, p2 = choice(ls), choice(ls)
-#         if selfPair or (p1 != p2):
-#             if replacement:
-#                 pairs.append((p1, p2))
-#                 n += 1
-#             elif ((p1,p2) not in pairs) and ((p2,p1) not in pairs):
-#                 pairs.append((p1, p2))
-#                 n += 1
-#     return pairs
-    
     if selfPair:
         all = [(p1, p2) for i, p1 in enumerate(ls) for p2 in ls[i:]]
     else:
@@ -386,3 +374,24 @@ def sample_random_pairs (ls, N, replacement = True, selfPair = False):
         return choices (all, k = N)
     else:
         return sample (all, k = N)
+
+def toOneLetterAA (aa):
+    """Convert an amino acid three-letter code to one-letter code.
+
+    Args:
+        aa (str): amino acid three-letter code.
+
+    Returns:
+        str if valid, otherwise '-'
+
+    """
+    oneLetter = {'Cys': 'C', 'Asp': 'D', 'Ser': 'S', 'Gln': 'Q', 'Lys': 'K', 'Trp': 'W', 
+                 'Thr': 'T', 'Asn': 'N', 'Pro': 'P', 'Phe': 'F', 'Ala': 'A', 'Gly': 'G', 
+                 'Ile': 'I', 'Leu': 'L', 'His': 'H', 'Arg': 'R', 'Met': 'M', 'Val': 'V', 
+                 'Glu': 'E', 'Tyr': 'Y', 'Asx': 'B', 'Glx': 'Z', 'Ter': '*'}
+    
+    aa = aa.title()
+    if aa in oneLetter:
+        return oneLetter[aa] 
+    else:
+        return '-'

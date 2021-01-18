@@ -140,6 +140,7 @@ def multi_bar_plot (data,
                     colors = 'b',
                     hatches = None,
                     barwidth = 0.3,
+                    linewidth = 1,
                     bargap = 0,
                     capsize = 10,
                     fmt = '.k',
@@ -174,6 +175,7 @@ def multi_bar_plot (data,
         colors (list): color for each group, optionally one color for all bars per group.
         hatches (list): bar hatche for each group.
         barwidth (numeric): width of each bar.
+        linewidth (numeric): thickness of bar edges.
         bargap (numeric): gap between adjacent bars of different groups. 
         capsize (numeric): width of upper and lower caps on error bars.
         fmt (str): error bar center point format.
@@ -230,9 +232,11 @@ def multi_bar_plot (data,
             ind = list(np.arange(1, numBars + 1))
         else:
             ind = [k + i * (barwidth + bargap) for k in np.arange(1, numBars + 1)]
+            #ind = [k + i * (barwidth + bargap) for k in np.arange(1, numBars)] + [numBars + (i + 1) * (barwidth + bargap)]
         ph.bar(ind,
                d,
                barwidth,
+               linewidth = linewidth,
                alpha = opacity,
                color = color,
                edgecolor = edgecolor,

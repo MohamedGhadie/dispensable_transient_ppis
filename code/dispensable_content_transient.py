@@ -24,7 +24,11 @@ def main():
     
     # reference interactome name
     # options: HI-II-14, HuRI, IntAct
-    interactome_name = 'IntAct'
+    interactome_name = 'HuRI'
+    
+    # method of calculating mutation ∆∆G for which results will be used
+    # options: bindprofx, foldx
+    ddg_method = 'foldx'
     
     # set to True to calculate dispensable PPI content using fraction of mono-edgetic mutations 
     # instead of all edgetic mutations
@@ -35,7 +39,7 @@ def main():
     
     # gene expression database name
     # options: Illumina, GTEx, HPA, Fantom5, GEO
-    expr_db = 'GEO'
+    expr_db = 'Illumina'
     
     # minimum number of expression point values required for protein pair tissue
     # co-expression to be considered
@@ -85,8 +89,11 @@ def main():
     # directory of processed data files specific to interactome
     interactomeDir = procDir / interactome_name
     
+    # directory of edgetic mutation calculation method
+    edgeticDir = interactomeDir / 'physics' / (ddg_method + '_edgetics')
+    
     # figure directory
-    figDir = Path('../figures') / interactome_name
+    figDir = Path('../figures') / interactome_name / 'physics' / (ddg_method + '_edgetics')
     
     # input data files
     illuminaExprFile = extDir / 'E-MTAB-513.tsv.txt'
@@ -98,21 +105,21 @@ def main():
     gdsTypeFile = procDir / 'gds_subset_type.txt'
     uniprotIDmapFile = procDir / 'to_human_uniprotID_map.pkl'
     uniqueGeneSwissProtIDFile = procDir / 'uniprot_unique_gene_reviewed_human_proteome.list'
-    naturalMutationsFile = interactomeDir / 'nondisease_mutation_edgetics.txt'
-    diseaseMutationsFile = interactomeDir / 'disease_mutation_edgetics.txt'
+    naturalMutationsFile = edgeticDir / 'nondisease_mutation_edgetics.txt'
+    diseaseMutationsFile = edgeticDir / 'disease_mutation_edgetics.txt'
     
     # output data files
     if expr_db is 'GTEx':
         proteinExprFile = procDir / ('protein_expr_norm_%s.pkl' % expr_db)
     else:
         proteinExprFile = procDir / ('protein_expr_%s.pkl' % expr_db)
-    natMutOutFile = interactomeDir / ('nondisease_mutation_transient_perturbs_%s.txt' % expr_db)
-    disMutOutFile = interactomeDir / ('disease_mutation_transient_perturbs_%s.txt' % expr_db)
-    dispensablePPIFile = interactomeDir / ('dispensable_content_Transient_%s.pkl' % expr_db)
+    natMutOutFile = edgeticDir / ('nondisease_mutation_transient_perturbs_%s.txt' % expr_db)
+    disMutOutFile = edgeticDir / ('disease_mutation_transient_perturbs_%s.txt' % expr_db)
+    dispensablePPIFile = edgeticDir / ('dispensable_content_Transient_%s.pkl' % expr_db)
     
     # create output directories if not existing
-    if not interactomeDir.exists():
-        os.makedirs(interactomeDir)
+    if not edgeticDir.exists():
+        os.makedirs(edgeticDir)
     if not figDir.exists():
         os.makedirs(figDir)
     
@@ -250,9 +257,11 @@ def main():
     # Dispensable content among all PPIs
     #------------------------------------------------------------------------------------
     
-    print('\n********************************************************************')
+    print()
+    print('********************************************************************')
     print('Dispensable content among all PPIs:')
-    print('********************************************************************\n')
+    print('********************************************************************')
+    print()
     
     print('Fraction of predicted %s mutations:' % edgotype)
     print('Non-disease mutations: %.3f (SE = %g, %d out of %d)' 
@@ -518,7 +527,6 @@ def main():
     else:
         maxY = max(pN_E.values())
     maxY = 10 * np.ceil(maxY / 10)
-    maxY = 40
     
     curve_plot ([pN_E[p] for p in pN_E_keys if p in pN_E],
                 error = [conf[p] for p in pN_E_keys if p in pN_E] if computeConfidenceIntervals else None,

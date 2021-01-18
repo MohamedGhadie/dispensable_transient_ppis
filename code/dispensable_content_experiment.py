@@ -57,7 +57,8 @@ def main():
     diseaseMutationsFile = interactomeDir / 'disease_mutation_edgotype_experiment.txt'
     
     # output data files
-    dispensablePPIFile = interactomeDir / 'fraction_disp_PPIs.pkl'
+    outFile = interactomeDir / 'fraction_disp_PPIs.pkl'
+    dispensablePPIFile = interactomeDir / 'dispensable_content.pkl'
     
     # create output directories if not existing
     if not interactomeDir.exists():
@@ -125,14 +126,14 @@ def main():
     
     pie_plot ([numNaturalMut_nonedgetic, numNaturalMut_edgetic],
               angle = 90,
-              colors = ['mediumslateblue', 'red'],
+              colors = ['lightsteelblue', 'orange'],
               edgewidth = 2,
               show = showFigs,
               figdir = figDir,
               figname = 'nondisease_mutations_edgetic')
     pie_plot ([numDiseaseMut_nonedgetic, numDiseaseMut_edgetic],
               angle=90,
-              colors = ['mediumslateblue', 'red'],
+              colors = ['lightsteelblue', 'orange'],
               edgewidth = 2,
               show = showFigs,
               figdir = figDir,
@@ -157,8 +158,16 @@ def main():
         if 'P(N|E)_CI' in all_effects:
             pN_E_lower, pN_E_upper = all_effects['P(N|E)_CI']
             dispContent['P(N|E)_CI'] = [pN_E_lower, pN_E_upper]
-    with open(dispensablePPIFile, 'wb') as fOut:
+    with open(outFile, 'wb') as fOut:
         pickle.dump(dispContent, fOut)
-
+    
+    if 'P(N|E)' in all_effects:
+        pN_E = {'All PPIs': 100 * all_effects['P(N|E)']}
+        if 'P(N|E)_CI' in all_effects:
+            lower, upper = all_effects['P(N|E)_CI']
+            conf = {'All PPIs': (100 * lower, 100 * upper)}
+    with open(dispensablePPIFile, 'wb') as fOut:
+        pickle.dump({'DC':pN_E, 'CI':conf}, fOut)
+    
 if __name__ == "__main__":
     main()

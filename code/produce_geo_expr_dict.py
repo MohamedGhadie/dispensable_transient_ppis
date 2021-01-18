@@ -4,6 +4,7 @@
 
 import pickle
 import numpy as np
+from collections import Counter
 from pathlib import Path
 from protein_function import produce_geo_expr_dict
 
@@ -39,24 +40,34 @@ def main():
     # 
     #------------------------------------------------------------------------------------
     
-    produce_geo_expr_dict (gdsTypeFile,
-                           uniprotIDmapFile,
-                           gdsDir,
-                           exprFile,
-                           numPoints = 5,
-                           avg = 'all')
+    if not exprFile.is_file():
+        produce_geo_expr_dict (gdsTypeFile,
+                               uniprotIDmapFile,
+                               gdsDir,
+                               exprFile,
+                               numPoints = 5,
+                               avg = 'all')
     
     with open(exprFile, 'rb') as f:
         expr = pickle.load(f)
     
-    num = {k:0 for k in np.arange(1, 64)}
+#    gdsSummary = pd.read_table(gdsTypeFile, sep='\t')
+    
+#    numDS = {k:0 for k in np.arange(1, len(gdsSummary))}
+    gdsIDs = set()
+    numDS = []
     for p, v in expr.items():
-        num[len(v.keys())] += 1
+        ids = list(v.keys())
+        numDS.append(len(ids))
+        gdsIDs.update(ids)
+    numDS = Counter(numDS)
     
-    for p, v in num.items():
-        print('%d: %d' % (p, v))
-    
-    print(len(expr.keys()))
-    
+    print('Proteins: %d' % len(expr.keys()))
+    print('Datasets: %d' % len(gdsIDs))
+    print()
+    print('Number of datasets: number of proteins')
+    for n in sorted(numDS.keys()):
+        print('%d: %d' % (n, numDS[n]))
+
 if __name__ == "__main__":
     main()

@@ -47,9 +47,6 @@ def main():
     # directory of processed data files specific to interactome
     interactomeDir = procDir / interactome_name
     
-    # directory of GEO dataset files
-    geoDir = extDir / 'GEO' / 'datasets'
-    
     # figure directory
     figDir = Path('../figures') / interactome_name
     
@@ -59,6 +56,7 @@ def main():
     hpaExprFile = extDir / 'normal_tissue.tsv'
     fantomExprFile = extDir / 'hg38_fair+new_CAGE_peaks_phase1and2_tpm_ann.osc.txt'
     fantomSampleTypeFile = extDir / 'fantom5_sample_type.xlsx'
+    geoDir = extDir / 'GEO' / 'datasets'
     gdsTypeFile = procDir / 'gds_subset_type.txt'
     uniprotIDmapFile = procDir / 'to_human_uniprotID_map.pkl'
     uniqueGeneSwissProtIDFile = procDir / 'uniprot_unique_gene_reviewed_human_proteome.list'
@@ -72,8 +70,8 @@ def main():
         proteinExprFile = procDir / ('protein_expr_%s.pkl' % expr_db)
     
     # create output directories if not existing
-    if not interactomeDir.exists():
-        os.makedirs(interactomeDir)
+    if not procDir.exists():
+        os.makedirs(procDir)
     if not figDir.exists():
         os.makedirs(figDir)
     

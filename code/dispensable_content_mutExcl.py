@@ -22,6 +22,10 @@ def main():
     # options: HI-II-14, HuRI, IntAct
     interactome_name = 'HuRI'
     
+    # method of calculating mutation ∆∆G for which results will be used
+    # options: bindprofx, foldx
+    ddg_method = 'foldx'
+    
     # set to True to calculate dispensable PPI content using fraction of mono-edgetic mutations 
     # instead of all edgetic mutations
     mono_edgetic = False
@@ -78,21 +82,24 @@ def main():
     # directory of processed data files specific to interactome
     interactomeDir = procDir / interactome_name
     
+    # directory of edgetic mutation calculation method
+    edgeticDir = interactomeDir / 'physics' / (ddg_method + '_edgetics')
+    
     # figure directory
-    figDir = Path('../figures') / interactome_name
+    figDir = Path('../figures') / interactome_name / 'physics' / (ddg_method + '_edgetics')
     
     # input data files
     structuralInteractomeFile = interactomeDir / 'structural_interactome.txt'
-    naturalMutationsFile = interactomeDir / 'nondisease_mutation_edgetics.txt'
-    diseaseMutationsFile = interactomeDir / 'disease_mutation_edgetics.txt'
+    naturalMutationsFile = edgeticDir / 'nondisease_mutation_edgetics.txt'
+    diseaseMutationsFile = edgeticDir / 'disease_mutation_edgetics.txt'
     
     # output data files
-    exclusivesOutFile = interactomeDir / 'interactome_mutExcl_simult.txt'
-    dispensablePPIFile = interactomeDir / 'dispensable_content_MutExcl.pkl'
+    exclusivesOutFile = edgeticDir / 'interactome_mutExcl_simult.txt'
+    dispensablePPIFile = edgeticDir / 'dispensable_content_MutExcl.pkl'
 
     # create output directories if not existing
-    if not interactomeDir.exists():
-        os.makedirs(interactomeDir)
+    if not edgeticDir.exists():
+        os.makedirs(edgeticDir)
     if not figDir.exists():
         os.makedirs(figDir)
     

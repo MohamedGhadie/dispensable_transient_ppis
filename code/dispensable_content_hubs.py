@@ -406,7 +406,6 @@ def main():
     else:
         maxY = max(pN_E.values())
     maxY = 10 * np.ceil(maxY / 10)
-    maxY = 40
     
     curve_plot ([pN_E[p] for p in pN_E_keys if p in pN_E],
                 error = [conf[p] for p in pN_E_keys if p in pN_E] if computeConfidenceIntervals else None,

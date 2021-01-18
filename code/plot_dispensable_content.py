@@ -10,7 +10,7 @@ import os
 import pickle
 import numpy as np
 from pathlib import Path
-from plot_tools import curve_plot
+from plot_tools import curve_plot, bar_plot
 
 def main():
     
@@ -60,8 +60,9 @@ def main():
         maxY = max(upper)
     else:
         maxY = max(pN_E_results)
-    maxY = 5 * np.ceil(maxY / 5)
-    maxY = 30
+    maxY = 10 * np.ceil(maxY / 10)
+    maxY = max(maxY, 30)
+    
     curve_plot (pN_E_results,
                 error = pN_E_bounds if plotConfidenceIntervals else None,
                 xlim = [0.8, numInteractomes + 0.1],
@@ -83,6 +84,33 @@ def main():
                 show = showFigs,
                 figdir = figDir,
                 figname = 'Fraction_disp_PPIs')
+    
+    bar_plot (pN_E_results,
+                    error = pN_E_bounds if plotConfidenceIntervals else None,
+                    xlabels = struc_interactome_names,
+                    ylabels = list(np.arange(0, maxY + 5, 10)),
+                    xlabel = None,
+                    ylabel = 'Fraction of dispensable PPIs (%)',
+                    colors = 'orange',
+                    barwidth = 0.5,
+                    capsize = 10 if plotConfidenceIntervals else 0,
+                    fmt = '.k',
+                    msize = 26,
+                    ewidth = 2,
+                    edgecolor = 'black',
+                    ecolors = 'k',
+                    fontsize = 20,
+                    opacity = None,
+                    #xlim = [0.8, numInteractomes + 0.1],
+                    ylim = [0, maxY],
+                    #xticks = list(np.arange(1, numInteractomes + 1)),
+                    yMinorTicks = 4,
+                    #adjustBottom = 0.2,
+                    #shiftBottomAxis = -0.1,
+                    #xbounds = (1, numInteractomes),
+                    show = showFigs,
+                    figdir = figDir,
+                    figname = 'dispensable_content_allPPIs')
 
 if __name__ == "__main__":
     main()

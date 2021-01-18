@@ -25,10 +25,10 @@ def main():
         os.makedirs(figDir)
         
     alldisp = [[1,2],[3,4],[5,6],[7,8]]
-    alldisp = [[1,2],[3,4],[5,6]]
+    #alldisp = [[1,2],[3,4],[5,6]]
     multi_bar_plot (alldisp,
-                    #colors = ['lightsteelblue', 'mediumseagreen', 'orange', 'red'],
-                    colors = ['lightsteelblue', 'mediumseagreen', 'red'],
+                    colors = ['lightsteelblue', 'mediumseagreen', 'orange', 'red'],
+                    #colors = ['lightsteelblue', 'mediumseagreen', 'red'],
                     fmt = '.k',
                     msize = 18,
                     ewidth = 1.25,
@@ -37,7 +37,7 @@ def main():
                     fontsize = 20,
                     ylim = [0, 10],
                     yMinorTicks = 4,
-                    leg = ['a', 'b','c'],
+                    leg = ['a', 'b','c', 'd'],
                     show = showFigs,
                     figdir = figDir,
                     figname = 'legend')
