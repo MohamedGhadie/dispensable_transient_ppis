@@ -366,8 +366,7 @@ def produce_fastsemsim_protein_gosim_dict (inPath,
 def produce_illumina_expr_dict (inPath,
                                 uniprotIDmapFile,
                                 outPath,
-                                normalize = False,
-                                headers = None):
+                                normalize = False):
     """Make a dictionary of protein tissue expression from Illumina Body Map dataset.
 
     Args:
@@ -375,25 +374,23 @@ def produce_illumina_expr_dict (inPath,
         uniprotIDmapFile (Path): path to file containing dict of mappings to UniProt IDs.
         outPath (Path): file path to save output dict to.
         normalize (bool): if True, normalize gene expression across tissues.
-        headers (list): list of expression column indices starting with gene name column index
-                        followed by indices for expression data. If None, column 1 is used as
-                        gene name and columns 2 to 17 are used as expression data.
 
     """
     with open(uniprotIDmapFile, 'rb') as f:
         uniprotID = pickle.load(f)
     expr = pd.read_table(inPath, comment='#', sep="\t")
-    if not headers:
-        headers = list(range(1, 18))
-    e = {}
+    
+    e = {'Tissues':list(expr.columns[2:])}
+    expr['Protein'] = expr['Gene Name'].apply(lambda x: uniprotID[x] if x in uniprotID else '-')
+    expr = expr[expr['Protein'] != '-'].reset_index(drop=True)
+    
     for _, row in expr.iterrows():
-       if row[headers[0]] in uniprotID:
-            id = uniprotID[row[headers[0]]]
-            values = np.array([row[k] for k in headers[1:]])
+       if row['Gene Name'] in uniprotID:
+            values = np.array(row[e['Tissues']].values, dtype=float)
             if normalize:
-                e[id] = (values - values.mean()) / values.std()
+                e[row.Protein] = (values - values.mean()) / values.std()
             else:
-                e[id] = values
+                e[row.Protein] = values
     with open(outPath, 'wb') as fOut:
         pickle.dump(e, fOut)
 
@@ -575,6 +572,8 @@ def produce_fantom5_expr_dict (inPath,
             expr[k] = (values - values.mean()) / values.std()
         else:
             expr[k] = values
+    expr['Tissues'] = tissues
+    
     with open(outPath, 'wb') as fOut:
         pickle.dump(expr, fOut)
 

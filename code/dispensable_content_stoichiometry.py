@@ -116,8 +116,8 @@ def main():
         proteinExprFile = procDir / ('protein_expr_norm_%s.pkl' % expr_db)
     else:
         proteinExprFile = procDir / ('protein_expr_%s.pkl' % expr_db)
-    natMutOutFile = edgeticDir / ('nondisease_mutation_transient_perturbs_%s.txt' % expr_db)
-    disMutOutFile = edgeticDir / ('disease_mutation_transient_perturbs_%s.txt' % expr_db)
+    natMutOutFile = edgeticDir / ('nondisease_mutation_unbalanced_perturbs_%s.txt' % expr_db)
+    disMutOutFile = edgeticDir / ('disease_mutation_unbalanced_perturbs_%s.txt' % expr_db)
     dispensablePPIFile = edgeticDir / ('dispensable_content_Unbalanced_%s.pkl' % expr_db)
     
     # create output directories if not existing
@@ -147,8 +147,7 @@ def main():
         if expr_db is 'Illumina':
             produce_illumina_expr_dict (illuminaExprFile,
                                         uniprotIDmapFile,
-                                        proteinExprFile,
-                                        headers = list(range(1, 18)))
+                                        proteinExprFile)
         elif expr_db is 'GTEx':
             produce_gtex_expr_dict (gtexDir,
                                     uniprotIDmapFile,

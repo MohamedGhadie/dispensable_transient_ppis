@@ -84,8 +84,7 @@ def main():
         if expr_db is 'Illumina':
             produce_illumina_expr_dict (illuminaExprFile,
                                         uniprotIDmapFile,
-                                        proteinExprFile,
-                                        headers = list(range(1, 18)))
+                                        proteinExprFile)
         elif expr_db is 'GTEx':
             produce_gtex_expr_dict (gtexDir,
                                     uniprotIDmapFile,

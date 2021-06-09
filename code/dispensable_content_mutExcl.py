@@ -7,7 +7,7 @@ import io
 import pickle
 import numpy as np
 from pathlib import Path
-from text_tools import read_list_table
+from text_tools import read_list_table, write_list_table
 from interactome_tools import (read_single_interface_annotated_interactome,
                                mutExcl_simult_partners,
                                max_num_mutExcl)
@@ -94,7 +94,9 @@ def main():
     diseaseMutationsFile = edgeticDir / 'disease_mutation_edgetics.txt'
     
     # output data files
-    exclusivesOutFile = edgeticDir / 'interactome_mutExcl_simult.txt'
+    exclusivesOutFile = interactomeDir / 'interactome_mutExcl_simult.txt'
+    natMutOutFile = edgeticDir / 'nondisease_mutation_mutExcl_perturbs.txt'
+    disMutOutFile = edgeticDir / 'disease_mutation_mutExcl_perturbs.txt'
     dispensablePPIFile = edgeticDir / 'dispensable_content_MutExcl.pkl'
 
     # create output directories if not existing
@@ -142,10 +144,10 @@ def main():
     mutExclusive, simultaneous = mutExcl_simult_partners (interactome, maxSimultOverlap = maxSimultOverlap)
     
     with io.open(exclusivesOutFile, "w") as fout:
-        fout.write('\t'.join(['Protein_1',
-                              'Protein_2',
-                              'Protein_1_mutually_exclusive_partners',
-                              'Protein_1_simultaneous_partners']) + '\n')
+        fout.write('\t'.join(['Protein',
+                              'Partner',
+                              'Mutually_exclusive_partners',
+                              'Simultaneously_possible_partners']) + '\n')
         for p in sorted(mutExclusive.keys()):
             for partner in sorted(mutExclusive[p].keys()):
                 excl, simult = mutExclusive[p][partner], simultaneous[p][partner]
@@ -161,13 +163,19 @@ def main():
             mutExcl.append(0)
     print('%d out of %d PPIs are mutually exclusive' % (sum(mutExcl), len(mutExcl)))
     
-    
     naturalMutations["numMutExcl"] = naturalMutations.apply(
                                         lambda x: [max_num_mutExcl (x["protein"], p, mutExclusive) 
                                                    for p in x["partners"]], axis=1)
     diseaseMutations["numMutExcl"] = diseaseMutations.apply(
                                         lambda x: [max_num_mutExcl (x["protein"], p, mutExclusive)
                                                    for p in x["partners"]], axis=1)
+    
+    write_list_table (naturalMutations, ["partners", "perturbations", "numMutExcl"], natMutOutFile)
+    write_list_table (diseaseMutations, ["partners", "perturbations", "numMutExcl"], disMutOutFile)
+    
+    #------------------------------------------------------------------------------------
+    # Count edgetic mutations that disrupt mutually exclusive PPIs
+    #------------------------------------------------------------------------------------
     
     natMut_numLowMutExcl_disrupt = naturalMutations.apply(
                                     lambda x: num_perturbed_ppis_n_mutExcl (x["perturbations"],

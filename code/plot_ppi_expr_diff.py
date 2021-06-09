@@ -83,8 +83,7 @@ def main():
             produce_illumina_expr_dict (illuminaExprFile,
                                         uniprotIDmapFile,
                                         proteinExprFile,
-                                        normalize = normalize,
-                                        headers = list(range(1, 18)))
+                                        normalize = normalize)
         elif expr_db is 'GTEx':
             produce_gtex_expr_dict (gtexDir,
                                     uniprotIDmapFile,

@@ -80,7 +80,7 @@ def main():
     figDir = Path('../figures') / interactome_name
     
     # input data files
-    illuminaExprFile = extDir / 'E-MTAB-513.tsv.txt'
+    illuminaExprFile = extDir / 'E-MTAB-513-query-results.tsv'
     gtexDir = extDir / 'GTEx_Analysis_v7_eQTL_expression_matrices'
     hpaExprFile = extDir / 'normal_tissue.tsv'
     fantomExprFile = extDir / 'hg38_fair+new_CAGE_peaks_phase1and2_tpm_ann.osc.txt'
@@ -112,8 +112,7 @@ def main():
         if expr_db is 'Illumina':
             produce_illumina_expr_dict (illuminaExprFile,
                                         uniprotIDmapFile,
-                                        proteinExprFile,
-                                        headers = list(range(1, 18)))
+                                        proteinExprFile)
         elif expr_db is 'GTEx':
             produce_gtex_expr_dict (gtexDir,
                                     uniprotIDmapFile,

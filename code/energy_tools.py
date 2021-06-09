@@ -45,8 +45,8 @@ def produce_initial_ppi_template_energy_file (inPath, outPath):
         ppis.loc[i, "Complex_ID"] = pdbid
         ppis.loc[i, "Chain_1"] = mapping[row.Protein_1]
         ppis.loc[i, "Chain_2"] = mapping[row.Protein_2] 
-    ppis[["Protein_1", "Protein_2", "Complex_ID", "Chain_1", "Chain_2", "Interaction_energy"]
-        ].to_csv (outPath, index=False, sep='\t')
+    ppis[["Protein_1", "Protein_2", "Complex_ID",
+          "Chain_1", "Chain_2", "Interaction_energy"]].to_csv (outPath, index=False, sep='\t')
 
 def read_unprocessed_ddg_mutations (inPath, type = 'binding'):
     """Read PDB chain mutations with missing ∆∆G values from file.
