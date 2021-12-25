@@ -11,7 +11,7 @@ from plot_tools import multi_bar_plot
 def main():
     
     # reference interactome names
-    interactome_names = ['HuRI', 'IntAct', 'experiment']
+    interactome_names = ['HuRI', 'IntAct', 'Sahni']
     
     # structural interactome names for plot labels
     struc_interactome_names = ['Y2H-SI', 'Lit-SI', 'Experiment']
@@ -93,7 +93,7 @@ def main():
         inPath = procDir / name / 'physics' / (ddg_method + '_edgetics') / inFile[tp]
         with open(inPath, 'rb') as f:
             allresults[name] = pickle.load(f)
-    inPath = procDir / 'experiment' / 'dispensable_content.pkl'
+    inPath = procDir / 'Sahni' / 'dispensable_content.pkl'
     with open(inPath, 'rb') as f:
         allresults['experiment'] = pickle.load(f)
     

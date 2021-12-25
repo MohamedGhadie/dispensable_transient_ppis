@@ -19,7 +19,7 @@ def main():
     
     # reference interactome name
     # options: HI-II-14, IntAct
-    interactome_name = 'experiment'
+    interactome_name = 'Sahni'
 
     # set to True to remove mutations that have no unique PPI perturbation
     unique_edgetics = False

@@ -38,7 +38,7 @@ def main():
     
     # gene expression database name
     # options: Illumina, GTEx, Fantom5, GEO
-    expr_db = 'Illumina'
+    expr_db = 'GEO'
     
     # minimum number of expression point values required for protein pair 
     # expression ratios to be considered
@@ -71,15 +71,18 @@ def main():
     # Probability for new missense mutations to be strongly detrimental (S)
     pS = 0.20
     
-    # Probability for strongly detrimental mutations (S) to be edgetic (E)
-    pE_S = 0
-    
     pN_E_keys = ['Balanced PPIs', 'Unbalanced PPIs']
     
     pN_E, conf = {}, {}
     
     # show figures
     showFigs = False
+    
+    # write results to output files
+    save_results = True
+    
+    # save figures
+    save_figures = True
     
     # parent directory of all data files
     dataDir = Path('../data')
@@ -281,7 +284,7 @@ def main():
                                   numNaturalMut_considered,
                                   numDiseaseMut_edgetic,
                                   numDiseaseMut_considered,
-                                  pT_S = pE_S,
+                                  pT_S = 0,
                                   edgotype = 'edgetic',
                                   CI = 95 if computeConfidenceIntervals else None,
                                   output = True)
@@ -312,8 +315,9 @@ def main():
                                                                                 singleExp = singleExp)
                                                                  for p in x["partners"]], axis=1)
     
-    write_list_table (naturalMutations, ["partners", "perturbations", "expr_balance"], natMutOutFile)
-    write_list_table (diseaseMutations, ["partners", "perturbations", "expr_balance"], disMutOutFile)
+    if save_results:
+        write_list_table (naturalMutations, ["partners", "perturbations", "expr_balance"], natMutOutFile)
+        write_list_table (diseaseMutations, ["partners", "perturbations", "expr_balance"], disMutOutFile)
     
     #------------------------------------------------------------------------------------
     # Count edgetic mutations that disrupt balanced and unbalanced PPIs
@@ -338,9 +342,9 @@ def main():
                                     (disMut_numBalancedPerturbs > 0))
     
     numNaturalMut_edgetic_unbal = sum((naturalMutations[eCol] == edgotype) & 
-                                        (natMut_numUnbalancedPerturbs == natMut_numPerturbs))
+                                      (natMut_numUnbalancedPerturbs == natMut_numPerturbs))
     numDiseaseMut_edgetic_unbal = sum((diseaseMutations[eCol] == edgotype) & 
-                                        (disMut_numUnbalancedPerturbs == disMut_numPerturbs))
+                                      (disMut_numUnbalancedPerturbs == disMut_numPerturbs))
     
     numNaturalMut_considered = (numNaturalMut_nonedgetic + 
                                 numNaturalMut_edgetic_bal + 
@@ -384,7 +388,7 @@ def main():
                                   numNaturalMut_considered,
                                   numDiseaseMut_edgetic_bal,
                                   numDiseaseMut_considered,
-                                  pT_S = pE_S,
+                                  pT_S = 0,
                                   edgotype = 'edgetic',
                                   CI = 95 if computeConfidenceIntervals else None,
                                   output = True)
@@ -429,7 +433,7 @@ def main():
                                   numNaturalMut_considered,
                                   numDiseaseMut_edgetic_unbal,
                                   numDiseaseMut_considered,
-                                  pT_S = pE_S,
+                                  pT_S = 0,
                                   edgotype = 'edgetic',
                                   CI = 95 if computeConfidenceIntervals else None,
                                   output = True)
@@ -444,60 +448,64 @@ def main():
     # Save dispensable content to file
     #------------------------------------------------------------------------------------
     
-    with open(dispensablePPIFile, 'wb') as fOut:
-        pickle.dump({'DC':pN_E, 'CI':conf}, fOut)
+    if save_results:
+        with open(dispensablePPIFile, 'wb') as fOut:
+            pickle.dump({'DC':pN_E, 'CI':conf}, fOut)
     
     #------------------------------------------------------------------------------------
     # Plot pie charts
     #------------------------------------------------------------------------------------
     
-    pie_plot ([numNaturalMut_nonedgetic, numNaturalMut_edgetic_unbal, numNaturalMut_edgetic_bal],
-              angle = 90,
-              colors = ['lightsteelblue', 'red', 'mediumseagreen'],
-              edgewidth = 2,
-              show = showFigs,
-              figdir = figDir,
-              figname = 'nondisease_mutations_unbalanced_%s_%s' % (edgotype, expr_db))
-    pie_plot ([numDiseaseMut_nonedgetic, numDiseaseMut_edgetic_unbal, numDiseaseMut_edgetic_bal],
-              angle = 90,
-              colors = ['lightsteelblue', 'red', 'mediumseagreen'],
-              edgewidth = 2,
-              show = showFigs,
-              figdir = figDir,
-              figname = 'disease_mutations_unbalanced_%s_%s' % (edgotype, expr_db))
+    if save_figures:
+        pie_plot ([numNaturalMut_nonedgetic, numNaturalMut_edgetic_unbal, numNaturalMut_edgetic_bal],
+                  angle = 90,
+                  colors = ['lightsteelblue', 'red', 'mediumseagreen'],
+                  edgewidth = 2,
+                  show = showFigs,
+                  figdir = figDir,
+                  figname = 'nondisease_mutations_unbalanced_%s_%s' % (edgotype, expr_db))
+    
+        pie_plot ([numDiseaseMut_nonedgetic, numDiseaseMut_edgetic_unbal, numDiseaseMut_edgetic_bal],
+                  angle = 90,
+                  colors = ['lightsteelblue', 'red', 'mediumseagreen'],
+                  edgewidth = 2,
+                  show = showFigs,
+                  figdir = figDir,
+                  figname = 'disease_mutations_unbalanced_%s_%s' % (edgotype, expr_db))
     
     #------------------------------------------------------------------------------------
     # Plot dispensable PPI content
     #------------------------------------------------------------------------------------
     
-    if computeConfidenceIntervals:
-        maxY = max([pN_E[p] + conf[p][1] for p in pN_E.keys()])
-    else:
-        maxY = max(pN_E.values())
-    maxY = 10 * np.ceil(maxY / 10)
-    maxY = max(maxY, 30)
+    if save_figures:
+        if computeConfidenceIntervals:
+            maxY = max([pN_E[p] + conf[p][1] for p in pN_E.keys()])
+        else:
+            maxY = max(pN_E.values())
+        maxY = 10 * np.ceil(maxY / 10)
+        maxY = max(maxY, 30)
     
-    curve_plot ([pN_E[p] for p in pN_E_keys if p in pN_E],
-                error = [conf[p] for p in pN_E_keys if p in pN_E] if computeConfidenceIntervals else None,
-                xlim = [0.8, 3.1],
-                ylim = [0, maxY],
-                styles = '.k',
-                capsize = 10 if computeConfidenceIntervals else 0,
-                msize = 26,
-                ewidth = 2,
-                ecolors = 'k',
-                ylabel = 'Fraction of dispensable PPIs (%)',
-                yMinorTicks = 4,
-                xticks = [1, 2],
-                xticklabels = [p.replace(' ', '\n') for p in pN_E_keys if p in pN_E],
-                yticklabels = list(np.arange(0, maxY + 5, 10)),
-                fontsize = 20,
-                adjustBottom = 0.2,
-                shiftBottomAxis = -0.1,
-                xbounds = (1, 2),
-                show = showFigs,
-                figdir = figDir,
-                figname = 'Fraction_disp_PPIs_unbalanced_%s' % expr_db)
+        curve_plot ([pN_E[p] for p in pN_E_keys if p in pN_E],
+                    error = [conf[p] for p in pN_E_keys if p in pN_E] if computeConfidenceIntervals else None,
+                    xlim = [0.8, 3.1],
+                    ylim = [0, maxY],
+                    styles = '.k',
+                    capsize = 10 if computeConfidenceIntervals else 0,
+                    msize = 26,
+                    ewidth = 2,
+                    ecolors = 'k',
+                    ylabel = 'Fraction of dispensable PPIs (%)',
+                    yMinorTicks = 4,
+                    xticks = [1, 2],
+                    xticklabels = [p.replace(' ', '\n') for p in pN_E_keys if p in pN_E],
+                    yticklabels = list(np.arange(0, maxY + 5, 10)),
+                    fontsize = 20,
+                    adjustBottom = 0.2,
+                    shiftBottomAxis = -0.1,
+                    xbounds = (1, 2),
+                    show = showFigs,
+                    figdir = figDir,
+                    figname = 'Fraction_disp_PPIs_unbalanced_%s' % expr_db)
 
 if __name__ == "__main__":
     main()

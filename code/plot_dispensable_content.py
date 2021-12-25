@@ -15,7 +15,7 @@ from plot_tools import curve_plot, bar_plot
 def main():
     
     # reference interactome names
-    interactome_names = ['HuRI', 'IntAct', 'experiment']
+    interactome_names = ['HuRI', 'IntAct', 'Sahni']
     
     # structural interactome names for plot labels
     struc_interactome_names = ['Y2H-SI', 'Lit-SI', 'Experiment']

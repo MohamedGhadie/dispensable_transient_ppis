@@ -46,9 +46,6 @@ def main():
     # Probability for new missense mutations to be strongly detrimental (S)
     pS = 0.20
     
-    # Probability for strongly detrimental mutations (S) to be edgetic (E)
-    pE_S = 0
-    
     # parent directory of all data files
     dataDir = Path('../data')
     
@@ -69,7 +66,7 @@ def main():
     diseaseMutationsFile = edgeticDir / 'disease_mutation_edgetics.txt'
     
     # output data files
-    dispensablePPIFile = edgeticDir / ('fraction_disp_PPIs%s.pkl' % ('_monoedgetic' if mono_edgetic else ''))
+    dispensablePPIFile = edgeticDir / ('dispensable_content%s.pkl' % ('_monoedgetic' if mono_edgetic else ''))
     
     # create output directories if not existing
     if not edgeticDir.exists():
@@ -148,7 +145,7 @@ def main():
                sderror_on_fraction (numDiseaseMut_edgetic, numDiseaseMut_considered),
                numDiseaseMut_edgetic,
                numDiseaseMut_considered))
-    return
+    
     fisher_test ([numNaturalMut_edgetic, numNaturalMut_nonedgetic],
                  [numDiseaseMut_edgetic, numDiseaseMut_nonedgetic])
     
@@ -175,7 +172,7 @@ def main():
                                   numNaturalMut_considered,
                                   numDiseaseMut_edgetic,
                                   numDiseaseMut_considered,
-                                  pT_S = pE_S,
+                                  pT_S = 0,
                                   edgotype = 'edgetic',
                                   CI = 95 if computeConfidenceIntervals else None,
                                   output = True)

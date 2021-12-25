@@ -14,7 +14,7 @@ from plot_tools import pie_plot
 def main():
     
     # reference interactome name
-    interactome_name = 'experiment'
+    interactome_name = 'Sahni'
 
     # set to True to remove mutations that have no unique PPI perturbation
     unique_edgetics = False
@@ -37,9 +37,6 @@ def main():
     # Probability for new missense mutations to be strongly detrimental (S)
     pS = 0.20
     
-    # Probability for strongly detrimental mutations (S) to be edgetic (E)
-    pE_S = 0
-    
     # parent directory of all data files
     dataDir = Path('../data')
     
@@ -57,7 +54,6 @@ def main():
     diseaseMutationsFile = interactomeDir / 'disease_mutation_edgotype_experiment.txt'
     
     # output data files
-    outFile = interactomeDir / 'fraction_disp_PPIs.pkl'
     dispensablePPIFile = interactomeDir / 'dispensable_content.pkl'
     
     # create output directories if not existing
@@ -147,19 +143,10 @@ def main():
                                   numNaturalMut_considered,
                                   numDiseaseMut_edgetic,
                                   numDiseaseMut_considered,
-                                  pT_S = pE_S,
+                                  pT_S = 0,
                                   edgotype = 'edgetic',
                                   CI = 95 if computeConfidenceIntervals else None,
                                   output = True)
-    
-    dispContent = {}
-    if 'P(N|E)' in all_effects:
-        dispContent['P(N|E)'] = all_effects['P(N|E)']
-        if 'P(N|E)_CI' in all_effects:
-            pN_E_lower, pN_E_upper = all_effects['P(N|E)_CI']
-            dispContent['P(N|E)_CI'] = [pN_E_lower, pN_E_upper]
-    with open(outFile, 'wb') as fOut:
-        pickle.dump(dispContent, fOut)
     
     if 'P(N|E)' in all_effects:
         pN_E = {'All PPIs': 100 * all_effects['P(N|E)']}

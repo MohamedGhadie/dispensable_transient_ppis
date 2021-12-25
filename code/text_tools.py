@@ -3,6 +3,7 @@
 #----------------------------------------------------------------------------------------
 
 import io
+import time
 import pandas as pd
 import copy as cp
 from pathlib import Path
@@ -204,3 +205,102 @@ def write_beluga_job (outPath,
             fout.write('\n')
             for cmd in commands:
                 fout.write('\n' + cmd)
+
+def parse_blast_file (inPath,
+                      outPath,
+                      encoding = 'us-ascii',
+                      pausetime = 0):
+    """Read alignments from BLAST output file.
+
+    Args:
+        inPath (Path): path to BLAST output file.
+        outPath (Path): path to save tab-delimited alignment table to.
+        encoding (str): encoding for reading BLAST output file.
+        pausetime (numeric): time in seconds to pause after processing 50 million lines.
+
+    """
+    allignKeys = ['Query',
+                  'Qlen',
+                  'Subject',
+                  'Slen',
+                  'Score',
+                  'Expect',
+                  'Identities',
+                  'Positives',
+                  'Gaps',
+                  'Qstart',
+                  'Qend',
+                  'Sstart',
+                  'Send',
+                  'Qseq',
+                  'Sseq',
+                  'Match']
+    allignInfo = {k:k for k in allignKeys}
+    currentInfo = {k:'-' for k in allignKeys[:4]}
+    previous = '-'
+    
+    with io.open(inPath, "r", encoding=encoding) as f:
+        for numLines, _ in enumerate(f):
+            pass
+            
+    with io.open(inPath, "r", encoding=encoding) as fin, io.open(outPath, "w") as fout:
+        for i, line in enumerate(fin):
+            if not (i % 1e6):
+                print('\t\t%d million out of %g million lines parsed' % (i // 1e6, numLines / 1e6))
+            if not ((i+1) % 50e6):
+                print('\t\tpausing for %d seconds' % pausetime)
+                time.sleep(pausetime)
+            line = line.replace('\n','')
+            stripline = line.strip()
+            if stripline.startswith('Query='):
+                linesplit = list(map(str.strip, stripline.split('=')))
+                currentInfo["Query"] = linesplit[1]
+                previous = 'query'
+            elif stripline.startswith('>'):
+                currentInfo["Subject"] = stripline[1:].strip()
+                previous = 'subject'
+            elif stripline.startswith('Length'):
+                linesplit = list(map(str.strip, stripline.split('=')))
+                if previous=='query':
+                    currentInfo["Qlen"] = linesplit[1]
+                elif previous=='subject':
+                    currentInfo["Slen"] = linesplit[1]
+            elif any(x in stripline for x in ['Score =', 'Except =', 'Identities =', 'Positives =', 'Gaps =']):
+                linesplit = list(map(str.strip, stripline.split(',')))
+                entrysplit = [list(map(str.strip, x.split('='))) for x in linesplit]
+                for entry in entrysplit:
+                    if len(entry) == 2:
+                        if entry[0] == 'Score':
+                            allignInfo.update({k:allignInfo[k].replace('\n','')
+                                              for k in ['Qseq','Sseq','Match']})
+                            info = [allignInfo[k] for k in allignKeys]
+                            fout.write('\t'.join(info) + '\n')
+                            allignInfo.update({k:'-' for k in allignKeys})
+                            allignInfo.update({k:'' for k in ['Qseq','Sseq','Match']})
+                            allignInfo.update({k:currentInfo[k] for k in currentInfo})
+                            allignInfo["Score"] = entry[1].split()[0]
+                        elif entry[0] == 'Expect':
+                            allignInfo["Expect"] = entry[1]
+                        elif entry[0] in ['Identities', 'Positives', 'Gaps']:
+                            allignInfo[entry[0]] = entry[1].split('/')[0].strip()
+            elif stripline.startswith('Query'):
+                linesplit = stripline.split()
+                if allignInfo["Qstart"] == '-':
+                    allignInfo["Qstart"] = linesplit[1]
+                allignInfo["Qend"] = linesplit[3]
+                allignInfo["Qseq"] = allignInfo["Qseq"] + linesplit[2]
+                allignLen = len(linesplit[2])
+                previous = 'query seq'
+            elif stripline.startswith('Sbjct'):
+                linesplit = stripline.split()
+                if allignInfo["Sstart"] == '-':
+                    allignInfo["Sstart"] = linesplit[1]
+                allignInfo["Send"] = linesplit[3]
+                allignInfo["Sseq"] = allignInfo["Sseq"] + linesplit[2]
+                previous = 'subject seq'
+            elif (len(line) > 0) and (previous == 'query seq'):
+                allignInfo["Match"] = allignInfo["Match"] + line[ - allignLen : ]
+        info = [allignInfo[k] for k in allignKeys]
+        fout.write('\t'.join(info) + '\n')
+    print('\t%d lines parsed from ' % (i + 1) + str(inPath) +  
+          'and written to file ' + str(outPath))

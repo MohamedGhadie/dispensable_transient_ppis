@@ -851,28 +851,34 @@ def write_ppi_energy_tofile (energy, inPath, outPath):
                 ppis.loc[i, "Interaction_energy"] = energy[k]
     ppis.to_csv (outPath, index=False, sep='\t')
 
-def read_ppi_energy (inPath, fails = False):
+def read_ppi_energy (inPath, col = None, fails = False):
 
     ppis = pd.read_table (inPath, sep='\t')
+    if col is None:
+        col = 'Interaction_energy'
     energy = {}
     for _, ppi in ppis.iterrows():
-        if ppi.Interaction_energy != '-':
+        e = ppi[col]
+        if e != '-':
             k = tuple(sorted([ppi.Protein_1, ppi.Protein_2]))
-            if ppi.Interaction_energy != 'X':
-                energy[k] = float(ppi.Interaction_energy)
+            if e != 'X':
+                energy[k] = float(e)
             elif fails:
                 energy[k] = 'X'
     return energy
 
-def read_ppi_chain_energy (inPath, fails = False):
+def read_ppi_chain_energy (inPath, col = None,  fails = False):
 
     ppis = pd.read_table (inPath, sep='\t')
+    if col is None:
+        col = 'Interaction_energy'
     energy = {}
     for _, ppi in ppis.iterrows():
-        if ppi.Interaction_energy != '-':
+        e = ppi[col]
+        if e != '-':
             k = tuple([ppi.Complex_ID] + sorted([ppi.Chain_1, ppi.Chain_2]))
-            if ppi.Interaction_energy != 'X':
-                energy[k] = float(ppi.Interaction_energy)
+            if e != 'X':
+                energy[k] = float(e)
             elif fails:
                 energy[k] = 'X'
     return energy
